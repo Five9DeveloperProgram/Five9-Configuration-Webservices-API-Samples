@@ -1,6 +1,6 @@
 # Quickstart
 
-The purpose of this repository is to provide individually functional scripts to demonstrate how to use Five9 Configuration Webservices API methods in Python.
+The purpose of this repository is to provide individually functional scripts to demonstrate how to use Five9 Configuration Webservices API methods in Python.  Forked from [Andrew Willey](https://github.com/andrewawilley)
 
 # DISCLAIMER
 
@@ -19,9 +19,9 @@ For a fully supported, robust, and tailor-made solution, we highly recommend con
 
 It is highly recommended that you install [git](https://git-scm.com/download/win) so that you can update to the latest version of this repository as needed.  Once installed, from the command line you can clone this repository with
 
-    git clone https://github.com/andrewawilley/Five9-Configuration-Webservices-API-Samples.git
+    git clone https://github.com/Five9DeveloperProgram/Five9-Configuration-Webservices-API-Samples.git
 
-You can also just download a [zip archive](https://github.com/andrewawilley/Five9-Configuration-Webservices-API-Samples/archive/refs/heads/main.zip) of the repository and extract
+You can also just download a [zip archive](https://github.com/Five9DeveloperProgram/Five9-Configuration-Webservices-API-Samples/archive/refs/heads/main.zip) of the repository and extract
 
 from the shell, navigate to the local copy (change to the directory that the repository is located) and then ...
 
