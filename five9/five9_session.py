@@ -2,8 +2,10 @@ import base64
 import code
 
 import argparse
+import functools
 import logging
 from lxml import etree
+import time
 
 from getpass import getpass
 
@@ -28,6 +30,25 @@ HOST_ALIAS = {
 
 class Five9ClientCreationError(Exception):
     pass
+
+
+class ThrottledServiceProxy:
+    def __init__(self, service, delay_seconds=.3):
+        self._service = service
+        self._delay = delay_seconds
+
+    def __getattr__(self, name):
+        attr = getattr(self._service, name)
+
+        if callable(attr):
+            @functools.wraps(attr)
+            def throttled_method(*args, **kwargs):
+                time.sleep(self._delay)
+                return attr(*args, **kwargs)
+            
+            return throttled_method
+
+        return attr
 
 
 class Five9Client(zeep.Client):
@@ -137,7 +158,9 @@ class Five9Client(zeep.Client):
             #     transport=zeep.Transport(session=self.transport_session),
             #     plugins=[self.history],
             # )
-            
+
+            self.throttled_service = ThrottledServiceProxy(self.service, delay_seconds=.3)
+
             # Fetching the current state of call counters if sessiontype is admin
             if sessiontype == "admin":
                 self.call_counters = self.service.getCallCountersState()
@@ -153,7 +176,7 @@ class Five9Client(zeep.Client):
                     self.domain_name = "HARDCODED"
                     self.domain_id = "HARDCODED"
 
-            logging.info(f"Client ready for {five9username}")
+            logging.info(f"Client ready for the {five9username}")
 
         # handle generic http errors
         except (
