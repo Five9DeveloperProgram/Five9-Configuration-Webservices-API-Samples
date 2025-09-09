@@ -86,6 +86,9 @@ if __name__ == "__main__":
         viewSettings=view_settings
     )
 
+
+    print(client.latest_envelopes)
+
     # Create a list of statistics to get
     stats = [
         # Five9Statistics(
@@ -109,8 +112,13 @@ if __name__ == "__main__":
     for stat in stats:
         stat.get_statistics()
 
+    print(client.latest_envelope_sent)
 
     # Get the statistics updates
     while True:
         for stat in stats:
             stat.get_statistics_update()
+
+        # sleep for five seconds to avoid overwhelming the server
+        time.sleep(5)
+        print(client.latest_envelope_sent)

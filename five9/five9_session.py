@@ -176,7 +176,7 @@ class Five9Client(zeep.Client):
                     self.domain_name = "HARDCODED"
                     self.domain_id = "HARDCODED"
 
-            logging.info(f"Client ready for the {five9username}")
+            logging.info(f"Client ready for {five9username}")
 
         # handle generic http errors
         except (
