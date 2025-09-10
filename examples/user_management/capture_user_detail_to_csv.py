@@ -18,6 +18,7 @@ def capture_user_details(
     client: five9_session.Five9Client,
     target_generalInfo_fields: list = ["userName", "EMail", "fullName", "active"],
     target_permissions: dict = {},
+    include_media_types: bool = False,
     target_filename: str = "users.csv",
     target_users: list = [],
 ):
@@ -79,10 +80,11 @@ def capture_user_details(
             user_output[attribute] = user.generalInfo[attribute]
 
         # Add media types configuration to the output
-        media_types = user.generalInfo.mediaTypeConfig.mediaTypes
-        for media_type in media_types:
-            media_type_name = media_type.type
-            user_output[f"media_enabled_{media_type_name}"] = media_type.enabled
+        if include_media_types:
+            media_types = user.generalInfo.mediaTypeConfig.mediaTypes
+            for media_type in media_types:
+                media_type_name = media_type.type
+                user_output[f"media_enabled_{media_type_name}"] = media_type.enabled
 
         # Add permissions if specified
         for role_key in target_permissions.keys():
@@ -169,7 +171,7 @@ if __name__ == "__main__":
 
     # Specify any role keys and permission types to include in the CSV file
     # target_permissions = {"agent": ["ManageAvailabilityBySkill", "CallForwarding"]}
-    target_permissions = {"agent": ["ManageAvailabilityBySkill"]}
+    target_permissions = {"agent": ["ReceiveTransfer"]}
     # target_permissions = {}
     target_users = []
 
