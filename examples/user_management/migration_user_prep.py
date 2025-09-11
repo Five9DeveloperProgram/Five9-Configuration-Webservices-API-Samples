@@ -1,4 +1,4 @@
-from five9.utils.common import parse_arguments, create_five9_client
+from five9.utils.common import common_parser_arguments, create_five9_client
 import logging
 from pathlib import Path
 
@@ -18,7 +18,7 @@ if __name__ == "__main__":
         }
     ]
 
-    args = parse_arguments(additional_args=additional_args)
+    args = common_parser_arguments(additional_args=additional_args)
     client = create_five9_client(args)
 
     users = client.service.getUsersInfo()

@@ -2,7 +2,7 @@ import argparse
 from five9 import five9_session
 
 
-def parse_arguments(additional_args=None):
+def common_parser_arguments(additional_args=None):
     parser = argparse.ArgumentParser(
         description="Common argument parser for Five9 examples"
     )

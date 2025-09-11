@@ -1,0 +1,7 @@
+{
+  "generalInfoFields": ["userName", "firstName", "lastName", "EMail", "active"],
+  "permissions": {
+    "agent": ["ReceiveTransfer"]
+  },
+  "includeMediaTypes": false
+}

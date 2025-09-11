@@ -23,10 +23,10 @@ It is highly recommended that you install [git](https://git-scm.com/download/win
 
 You can also just download a [zip archive](https://github.com/Five9DeveloperProgram/Five9-Configuration-Webservices-API-Samples/archive/refs/heads/main.zip) of the repository and extract
 
-from the shell, navigate to the local copy (change to the directory that the repository is located) and then ...
+from the shell, **navigate to the local copy** (change to the directory that the repository is located) and then ...
 
 #### Windows Users
-    mkdir venvs
+	mkdir venvs
     cd venvs
     py.exe -m venv five9
     cd ..
@@ -54,6 +54,17 @@ The credentials object in private.credentials looks like this:
     }
 
 If you run a script without this accounts object, you'll be prompted to enter username and password in the console. 
+
+### Ongoing use
+Now that you have the library installed and the virtual environment created, to use this in a new shell session in the future, simply navigate to the directory where you pulled the repository and activate the virtual environment again.
+
+For example in windows:
+    cd Five9-Configuration-Webservices-API-Samples\
+	.\venvs\five9\Scripts\activate
+
+or in MacOS / Linux
+    cd Five9-Configuration-Webservices-API-Samples
+	
 
 # Creating and using a shell session
 After activating the virtual evnironment, launch an interactive shell session with the included five9_session.py

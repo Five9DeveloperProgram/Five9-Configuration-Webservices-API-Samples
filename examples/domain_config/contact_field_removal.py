@@ -1,7 +1,7 @@
 import os
 import time
 import tqdm
-from five9.utils.common import parse_arguments, create_five9_client
+from five9.utils.common import common_parser_arguments, create_five9_client
 
 
 def get_campaigns_by_campaign_status(client, target_status):
@@ -25,7 +25,7 @@ if __name__ == "__main__":
             "help": "List of contact fields to remove (pipe delimited)",
         }
     ]
-    args = parse_arguments(additional_args)
+    args = common_parser_arguments(additional_args)
 
     # create a list from the fields to remove, assume they are pipe-delimited
     fields_to_remove = args.fields_to_remove.split("|")

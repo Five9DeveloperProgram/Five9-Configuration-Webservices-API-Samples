@@ -2,7 +2,7 @@ import csv
 import time
 from tqdm import tqdm
 import argparse
-from five9.utils.common import parse_arguments, create_five9_client
+from five9.utils.common import common_parser_arguments, create_five9_client
 from five9 import five9_session
 import zeep
 from pathlib import Path
@@ -95,7 +95,7 @@ if __name__ == "__main__":
             "help": "Path to the error log file",
         },
     ]
-    args = parse_arguments(additional_args)
+    args = common_parser_arguments(additional_args)
 
     # Create Five9 client
     client = create_five9_client(args)
