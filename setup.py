@@ -1,33 +1,43 @@
 from setuptools import setup, find_packages
 import os
+import time
 
 
 # create files that will be excluded from the repository from list of tuples
 # first tuple element is the filename with directory, second is the file content
-files_to_create = [
-    ("private/credentials.py", 
-        '''
-# update the below with the desired credential for semi-secure re-use credentials
-# When kept in the private folder, it will not be incldued in git commits
-# This is NOT a good/secure practice.  Consider implementing a database store
-# or using command line arguments.  This is simply for demonstration purposes.
+RESET_PRIVATE = os.getenv("F9_RESET_PRIVATE", "0") == "1"
 
-ACCOUNTS = {
-    'default_account': {
-        'username': 'apiUserUsername',
-        'password': 'apiUserPassword'
-    },
-}
-'''),
+credentials_template = '''\n# update the below with desired credentials (semi-secure demo storage)\n# Existing file preserved unless F9_RESET_PRIVATE=1 is set in environment.\n# To force regeneration: F9_RESET_PRIVATE=1 pip install -e .\n\nACCOUNTS = {\n    'default_account': {\n        'username': 'apiUserUsername',\n        'password': 'apiUserPassword'\n    },\n    # 'default_test_account': {\n    #     'username': 'yourTestUser',\n    #     'password': 'yourTestPass'\n    # },\n}\n'''
+
+bootstrap_files = [
+    ("private/credentials.py", credentials_template),
     ("private/__init__.py", ""),
     ("private/users_to_update.csv", "")
 ]
 
-for new_file in files_to_create:
-    # create the directories for the files that will be generated
-    os.makedirs(os.path.dirname(new_file[0]), exist_ok=True)
-    # write the file contents
-    with open(new_file[0], "w") as f: f.write(new_file[1])
+for path, content in bootstrap_files:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    if path.endswith("credentials.py"):
+        if os.path.exists(path) and not RESET_PRIVATE:
+            # Preserve existing credentials
+            continue
+        if os.path.exists(path) and RESET_PRIVATE:
+            ts = time.strftime('%Y%m%d-%H%M%S')
+            backup_path = f"{path}.backup.{ts}"
+            try:
+                with open(path, 'r') as rf:
+                    original = rf.read()
+                with open(backup_path, 'w') as bf:
+                    bf.write(original)
+            except OSError:
+                pass  # best-effort backup
+        with open(path, 'w') as wf:
+            wf.write(content)
+    else:
+        # create ancillary file only if it does not exist to avoid clobbering user data
+        if not os.path.exists(path):
+            with open(path, 'w') as wf:
+                wf.write(content)
 
 with open('requirements.txt') as f:
     requirements = f.read().splitlines()

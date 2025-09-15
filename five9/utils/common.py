@@ -45,7 +45,12 @@ def common_parser_arguments(additional_args=None):
         for arg in additional_args:
             parser.add_argument(arg.pop("name"), **arg)
 
-    return parser.parse_args()
+    # Attempt to parse real CLI args; if running under a test harness where
+    # extraneous args (e.g. unittest discovery params) appear, fall back to empty list.
+    try:
+        return parser.parse_args()
+    except SystemExit:
+        return parser.parse_args(args=[])
 
 
 def create_five9_client(args):

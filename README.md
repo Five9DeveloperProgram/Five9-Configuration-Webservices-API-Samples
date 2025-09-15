@@ -46,12 +46,23 @@ The setup script will create a private folder that can contain a credentials.py 
 
 The credentials object in private.credentials looks like this:
 
-    ACCOUNTS = {
-        'default_account': {
-            'username': 'apiUserName',
-            'password': 'superSecretPassword'
-        }
-    }
+	ACCOUNTS = {
+		'default_account': {
+			'username': 'apiUserName',
+			'password': 'superSecretPassword'
+		},
+		# Optional test account used by integration tests if present
+		# 'default_test_account': {
+		#     'username': 'apiTestUser',
+		#     'password': 'apiTestPass'
+		# }
+	}
+
+Credential bootstrap behavior:
+ - Existing `private/credentials.py` is preserved on install.
+ - To force regeneration (and create a timestamped backup):
+	   F9_RESET_PRIVATE=1 pip install -e .
+ - Integration tests also accept env vars F9_TEST_USERNAME / F9_TEST_PASSWORD.
 
 If you run a script without this accounts object, you'll be prompted to enter username and password in the console. 
 
@@ -65,6 +76,43 @@ For example in windows:
 or in MacOS / Linux
     cd Five9-Configuration-Webservices-API-Samples
 	
+## Running Tests & Coverage
+
+You can use either the provided shell script, Makefile targets, or direct commands.
+
+Using the Makefile (recommended for consistency):
+
+	make unit                # fast utility unit tests only (no API calls)
+	make coverage            # coverage on fast unit tests
+	make test                # full test suite incl. integration (sets F9_INTEGRATION=1)
+	FAIL_UNDER=80 make coverage   # fail build if coverage < 80%
+
+Direct commands (after activating venv):
+
+	# Fast (no external API) tests
+	python -m unittest discover -s five9/tests -p 'test_utils_*.py' -v
+	# Full including integration
+	F9_INTEGRATION=1 python -m unittest discover -s five9/tests -p 'test*.py' -v
+	coverage run -m unittest discover -s five9/tests -p 'test_utils_*.py'
+	coverage html && open htmlcov/index.html
+
+To disable auto-opening the report:
+
+    OPEN_HTML=0 make test
+
+Script helper (from any directory):
+
+	./five9/unittest_coverage.sh --report --fail-under=75
+
+### Test Categories
+Current tests include both lightweight utility unit tests and API-integration tests (`testSessions.py`, `testDomainCapture.py`). If you need to skip live API tests in CI, export an environment flag and conditionally skip (future enhancement).
+
+## Development Workflow Summary
+1. Activate or create the venv (or just run `make test`).
+2. Add / modify code.
+3. Run `make coverage` to ensure no coverage regressions.
+4. Open `five9/htmlcov/index.html` for detailed per-line coverage.
+
 
 # Creating and using a shell session
 After activating the virtual evnironment, launch an interactive shell session with the included five9_session.py
