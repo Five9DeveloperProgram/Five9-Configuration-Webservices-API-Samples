@@ -74,44 +74,7 @@ For example in windows:
 	.\venvs\five9\Scripts\activate
 
 or in MacOS / Linux
-    cd Five9-Configuration-Webservices-API-Samples
-	
-## Running Tests & Coverage
-
-You can use either the provided shell script, Makefile targets, or direct commands.
-
-Using the Makefile (recommended for consistency):
-
-	make unit                # fast utility unit tests only (no API calls)
-	make coverage            # coverage on fast unit tests
-	make test                # full test suite incl. integration (sets F9_INTEGRATION=1)
-	FAIL_UNDER=80 make coverage   # fail build if coverage < 80%
-
-Direct commands (after activating venv):
-
-	# Fast (no external API) tests
-	python -m unittest discover -s five9/tests -p 'test_utils_*.py' -v
-	# Full including integration
-	F9_INTEGRATION=1 python -m unittest discover -s five9/tests -p 'test*.py' -v
-	coverage run -m unittest discover -s five9/tests -p 'test_utils_*.py'
-	coverage html && open htmlcov/index.html
-
-To disable auto-opening the report:
-
-    OPEN_HTML=0 make test
-
-Script helper (from any directory):
-
-	./five9/unittest_coverage.sh --report --fail-under=75
-
-### Test Categories
-Current tests include both lightweight utility unit tests and API-integration tests (`testSessions.py`, `testDomainCapture.py`). If you need to skip live API tests in CI, export an environment flag and conditionally skip (future enhancement).
-
-## Development Workflow Summary
-1. Activate or create the venv (or just run `make test`).
-2. Add / modify code.
-3. Run `make coverage` to ensure no coverage regressions.
-4. Open `five9/htmlcov/index.html` for detailed per-line coverage.
+	cd Five9-Configuration-Webservices-API-Samples
 
 
 # Creating and using a shell session
@@ -343,3 +306,60 @@ The available methods as of v13 are:
 	userSkillAdd
 	userSkillModify
 	userSkillRemove
+
+---
+
+## Appendix: Testing & Coverage (For Contributors)
+Most typical users can skip this section. It’s here for developers extending or validating the library.
+
+### Quick Targets (Makefile)
+
+	make unit                  # fast utility tests (no live API)
+	make coverage              # coverage for fast tests
+	make test                  # full suite incl. integration (sets F9_INTEGRATION=1)
+	FAIL_UNDER=80 make coverage   # enforce minimum coverage
+
+### Direct Commands
+After activating the virtual environment:
+
+	# Fast (no external API) tests
+	python -m unittest discover -s five9/tests -p 'test_utils_*.py' -v
+	# Full including integration
+	F9_INTEGRATION=1 python -m unittest discover -s five9/tests -p 'test*.py' -v
+	coverage run -m unittest discover -s five9/tests -p 'test_utils_*.py'
+	coverage html && open htmlcov/index.html
+
+Disable auto-opening the HTML report:
+
+	OPEN_HTML=0 make test
+
+Helper script (runnable anywhere):
+
+	./five9/unittest_coverage.sh --report --fail-under=75
+
+### Test Categories
+- Utility unit tests (fast, offline): `test_utils_*.py`
+- Integration tests (live API): `testSessions.py`, `testDomainCapture.py`, etc.
+
+### Suggested Dev Flow
+1. Create / activate venv.
+2. Implement changes.
+3. Run `make unit` for quick feedback.
+4. Run `make coverage` to watch for regressions.
+5. Run `make test` before PR (executes integration iff creds available).
+6. View `htmlcov/index.html` if needed.
+
+### Environment Variables
+- F9_INTEGRATION=1 : Include integration tests.
+- F9_TEST_USERNAME / F9_TEST_PASSWORD : Optional integration creds.
+- OPEN_HTML=0 : Don’t auto-open coverage report.
+- FAIL_UNDER : Coverage threshold for Make target.
+
+### Coverage Threshold Example
+
+	FAIL_UNDER=85 make coverage
+
+### Troubleshooting
+- Missing creds: add to `private/credentials.py` or export env vars.
+- Network/SOAP errors: verify connectivity / IP allowlist / VPN.
+- Dependency drift: `pip install -e . --upgrade`.
