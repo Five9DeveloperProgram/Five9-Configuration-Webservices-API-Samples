@@ -45,7 +45,14 @@ def common_parser_arguments(additional_args=None):
         for arg in additional_args:
             parser.add_argument(arg.pop("name"), **arg)
 
-    return parser.parse_args()
+    # Attempt to parse real CLI args. When invoked under tools like
+    # `python -m unittest discover -s tests -p test*.py` our custom parser
+    # sees tokens like "discover -s ..." that are unrelated and would
+    # normally trigger a SystemExit (printing a confusing usage error).
+    # Using parse_known_args lets us ignore anything we don't define so
+    # test discovery proceeds silently.
+    parsed, _unknown = parser.parse_known_args()
+    return parsed
 
 
 def create_five9_client(args):

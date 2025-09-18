@@ -1,10 +1,9 @@
 # unittests for the domain_capture module
 
 import unittest
-# from unittest.mock import patch
-
-from five9.utils.domain_capture import *
-from five9_session import Five9Client
+import os
+from five9.utils.domain_capture import Five9DomainConfig
+from five9.five9_session import Five9Client
 
 from private.credentials import ACCOUNTS
 
@@ -17,10 +16,30 @@ from private.credentials import ACCOUNTS
 # coverage run -m unittest tests.testDomainCapture
 
 
+INTEGRATION = os.getenv("F9_INTEGRATION", "0") == "1"
+TEST_ENV_USERNAME = os.getenv("F9_TEST_USERNAME")
+TEST_ENV_PASSWORD = os.getenv("F9_TEST_PASSWORD")
+
+@unittest.skipUnless(INTEGRATION, "Integration tests require F9_INTEGRATION=1")
 class TestDomainCapture(unittest.TestCase):
     username = None
     password = None
     account = None
+    skip_reason = None
+
+    @classmethod
+    def setUpClass(cls):
+        if "default_test_account" in ACCOUNTS:
+            creds = ACCOUNTS.get("default_test_account", {})
+            cls.username = creds.get("username")
+            cls.password = creds.get("password")
+            cls.account = "default_test_account"
+        elif TEST_ENV_USERNAME and TEST_ENV_PASSWORD:
+            cls.username = TEST_ENV_USERNAME
+            cls.password = TEST_ENV_PASSWORD
+            cls.account = None
+        else:
+            cls.skip_reason = "No integration test credentials found (add default_test_account or set F9_TEST_USERNAME/F9_TEST_PASSWORD)."
 
     def input(self, prompt):
         if prompt == "Enter Username: ":
@@ -30,10 +49,13 @@ class TestDomainCapture(unittest.TestCase):
 
     # initialize test variables from credentials.ACCOUNTS
     def setUp(self):
-        self.username = ACCOUNTS["default_test_account"]["username"]
-        self.password = ACCOUNTS["default_test_account"]["password"]
-        self.account = "default_test_account"
-        self.client = Five9Client(account=self.account)
+        if self.skip_reason:
+            self.skipTest(self.skip_reason)
+        # initialize client using account alias if available else direct creds
+        if self.account:
+            self.client = Five9Client(account=self.account)
+        else:
+            self.client = Five9Client(five9username=self.username, five9password=self.password)
 
     def initialize_domain_configuration(self, get_objects=False):
         # if no self.domain_configuration object exists, create one
@@ -89,11 +111,10 @@ class TestDomainCapture(unittest.TestCase):
                 # build path variable for the demystified campaign profile
                 # and assert that it exists
                 demystified_campaign_profile_path = os.path.join(
-                    "domain_config",
                     "domain_snapshots",
                     f"{self.domain_configuration.domain_path}",
                     "campaign_profile_filters_demystified",
-                    campaign["profileName"] + ".txt",
+                    campaign["profileName"] + ".sql",
                 )
                 print(demystified_campaign_profile_path)
                 self.assertTrue(os.path.exists(demystified_campaign_profile_path))

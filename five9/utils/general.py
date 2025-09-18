@@ -121,24 +121,39 @@ def datatype_conversion(datatype, value):
             return value
 
         if datatype == bool:
-            if value.lower() in ["true", "t", "yes", "y", "1"]:
+            v = value.lower()
+            if v in ["true", "t", "yes", "y", "1"]:
                 return True
-            elif value.lower() in ["false", "f", "no", "n", "0"]:
+            if v in ["false", "f", "no", "n", "0"]:
                 return False
-            else:
-                raise Exception(f"Unable to convert {value} to {datatype}")
+            raise Exception()
 
-        # if int, return the int value of the string
         if datatype == int:
             return int(value)
 
-        # if float, return the float value of the string
         if datatype == float:
             return float(value)
 
-        # if datetime, return the datetime value of the string
-        if datatype == datetime:
-            return datetime.parser.parse(value)
+        if datatype == datetime.datetime:
+            try:
+                return datetime.datetime.fromisoformat(value)
+            except Exception:
+                common_formats = [
+                    "%Y-%m-%d %H:%M:%S",
+                    "%Y-%m-%d %H:%M:%S.%f",
+                    "%Y-%m-%d",
+                    "%m/%d/%Y",
+                    "%m/%d/%Y %H:%M",
+                    "%m/%d/%Y %H:%M:%S",
+                ]
+                for fmt in common_formats:
+                    try:
+                        return datetime.datetime.strptime(value, fmt)
+                    except ValueError:
+                        continue
+                raise Exception()
 
-    except Exception as e:
+        # Unsupported type
+        raise Exception()
+    except Exception:
         raise Exception(f"Unable to convert {value} to {datatype}")

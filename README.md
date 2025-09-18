@@ -46,12 +46,23 @@ The setup script will create a private folder that can contain a credentials.py 
 
 The credentials object in private.credentials looks like this:
 
-    ACCOUNTS = {
-        'default_account': {
-            'username': 'apiUserName',
-            'password': 'superSecretPassword'
-        }
-    }
+	ACCOUNTS = {
+		'default_account': {
+			'username': 'apiUserName',
+			'password': 'superSecretPassword'
+		},
+		# Optional test account used by integration tests if present
+		# 'default_test_account': {
+		#     'username': 'apiTestUser',
+		#     'password': 'apiTestPass'
+		# }
+	}
+
+Credential bootstrap behavior:
+ - Existing `private/credentials.py` is preserved on install.
+ - To force regeneration (and create a timestamped backup):
+	   F9_RESET_PRIVATE=1 pip install -e .
+ - Integration tests also accept env vars F9_TEST_USERNAME / F9_TEST_PASSWORD.
 
 If you run a script without this accounts object, you'll be prompted to enter username and password in the console. 
 
@@ -63,8 +74,8 @@ For example in windows:
 	.\venvs\five9\Scripts\activate
 
 or in MacOS / Linux
-    cd Five9-Configuration-Webservices-API-Samples
-	
+	cd Five9-Configuration-Webservices-API-Samples
+
 
 # Creating and using a shell session
 After activating the virtual evnironment, launch an interactive shell session with the included five9_session.py
@@ -295,3 +306,60 @@ The available methods as of v13 are:
 	userSkillAdd
 	userSkillModify
 	userSkillRemove
+
+---
+
+## Appendix: Testing & Coverage
+Most typical users can skip this section. It’s here for developers extending or validating the library.
+
+### Quick Targets (Makefile)
+
+	make unit                  # fast utility tests (no live API)
+	make coverage              # coverage for fast tests
+	make test                  # full suite incl. integration (sets F9_INTEGRATION=1)
+	FAIL_UNDER=80 make coverage   # enforce minimum coverage
+
+### Direct Commands
+After activating the virtual environment:
+
+	# Fast (no external API) tests
+	python -m unittest discover -s five9/tests -p 'test_utils_*.py' -v
+	# Full including integration
+	F9_INTEGRATION=1 python -m unittest discover -s five9/tests -p 'test*.py' -v
+	coverage run -m unittest discover -s five9/tests -p 'test_utils_*.py'
+	coverage html && open htmlcov/index.html
+
+Disable auto-opening the HTML report:
+
+	OPEN_HTML=0 make test
+
+Helper script (runnable anywhere):
+
+	./five9/unittest_coverage.sh --report --fail-under=75
+
+### Test Categories
+- Utility unit tests (fast, offline): `test_utils_*.py`
+- Integration tests (live API): `testSessions.py`, `testDomainCapture.py`, etc.
+
+### Suggested Dev Flow
+1. Create / activate venv.
+2. Implement changes.
+3. Run `make unit` for quick feedback.
+4. Run `make coverage` to watch for regressions.
+5. Run `make test` before PR (executes integration iff creds available).
+6. View `htmlcov/index.html` if needed.
+
+### Environment Variables
+- F9_INTEGRATION=1 : Include integration tests.
+- F9_TEST_USERNAME / F9_TEST_PASSWORD : Optional integration creds.
+- OPEN_HTML=0 : Don’t auto-open coverage report.
+- FAIL_UNDER : Coverage threshold for Make target.
+
+### Coverage Threshold Example
+
+	FAIL_UNDER=85 make coverage
+
+### Troubleshooting
+- Missing creds: add to `private/credentials.py` or export env vars.
+- Network/SOAP errors: verify connectivity / IP allowlist / VPN.
+- Dependency drift: `pip install -e . --upgrade`.

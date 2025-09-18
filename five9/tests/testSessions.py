@@ -2,6 +2,12 @@
 from io import StringIO
 import unittest
 from unittest.mock import patch
+import os
+
+INTEGRATION = os.getenv("F9_INTEGRATION", "0") == "1"
+
+TEST_ENV_USERNAME = os.getenv("F9_TEST_USERNAME")
+TEST_ENV_PASSWORD = os.getenv("F9_TEST_PASSWORD")
 
 from five9 import five9_session
 from private.credentials import ACCOUNTS
@@ -11,31 +17,38 @@ from private.credentials import ACCOUNTS
 # coverage html
 
 
+@unittest.skipUnless(INTEGRATION, "Integration tests require F9_INTEGRATION=1")
 class TestFive9Session(unittest.TestCase):
     username = None
     password = None
     account = None
+    skip_reason = None
 
-    def input(self, prompt):
-        if prompt == "Enter Username: ":
-            return self.username
-        if prompt == "Enter Password: ":
-            return self.password
+    @classmethod
+    def setUpClass(cls):
+        # Determine credentials preference: ACCOUNTS alias, then env vars
+        if "default_test_account" in ACCOUNTS:
+            creds = ACCOUNTS.get("default_test_account", {})
+            cls.username = creds.get("username")
+            cls.password = creds.get("password")
+            cls.account = "default_test_account"
+        elif TEST_ENV_USERNAME and TEST_ENV_PASSWORD:
+            cls.username = TEST_ENV_USERNAME
+            cls.password = TEST_ENV_PASSWORD
+            cls.account = None  # direct creds
+        else:
+            cls.skip_reason = "No integration test credentials found (add default_test_account or set F9_TEST_USERNAME/F9_TEST_PASSWORD)."
 
-    # initialize test variables from credentials.ACCOUNTS
     def setUp(self):
-        self.username = ACCOUNTS["default_test_account"]["username"]
-        self.password = ACCOUNTS["default_test_account"]["password"]
-        self.account = "default_test_account"
+        if self.skip_reason:
+            self.skipTest(self.skip_reason)
 
     def test_session_create_with_default_credential(self):
-        test_client = five9_session.Five9Client(account=self.account)
+        test_client = five9_session.Five9Client(account=self.account) if self.account else five9_session.Five9Client(five9username=self.username, five9password=self.password)
         self.assertIsNotNone(test_client)
 
     def test_session_create_with_username_and_password(self):
-        test_client = five9_session.Five9Client(
-            five9username=self.username, five9password=self.password
-        )
+        test_client = five9_session.Five9Client(five9username=self.username, five9password=self.password)
         self.assertIsNotNone(test_client)
         test_client.service.closeSession()
 
