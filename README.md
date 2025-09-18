@@ -309,7 +309,7 @@ The available methods as of v13 are:
 
 ---
 
-## Appendix: Testing & Coverage (For Contributors)
+## Appendix: Testing & Coverage
 Most typical users can skip this section. It’s here for developers extending or validating the library.
 
 ### Quick Targets (Makefile)
