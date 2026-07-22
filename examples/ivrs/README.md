@@ -33,6 +33,53 @@ The script generates a CSV file with the following columns:
 
 The script logs the time taken to pull IVR scripts and the total runtime. If the `--verbose` flag is set, it also logs the extracted variable usage in JSON format.
 
+# IVR Diagram & Documentation Generator
+
+This script renders each Five9 IVR script into a styled SVG call-flow diagram and a Markdown prompt summary. It decodes TTS prompts, maps each module type to a distinct shape/color, lays out the flow, and documents every exit.
+
+The diagram includes:
+- **Exception exits** drawn as their own explicit, labeled red port on any module that defines an exception handler (not just an unlabeled second arrow).
+- An **on-canvas legend** listing the module types actually used in that script.
+- A **title block** with the IVR name and module/transition counts.
+- Shapes/labels for the full module set, including `input`, `systemInfo`, `iterator`, `ivaTransfer`, `systemUpdate`, and `recording`.
+
+The generated SVG can be passed verbatim to Lucidchart via the Lucid connector's `lucid_convert_svg_to_diagram` tool. The script itself does not talk to Lucid — it only produces the artifacts.
+
+Rendering is provided by the reusable `five9.utils.ivr_diagram` module (`ivr_to_svg()` / `ivr_to_text()`), which operates on an IVR's `xmlDefinition` string. Domain capture can emit the same artifacts automatically — see `Five9DomainConfig(generate_ivr_diagrams=True)` in `examples/domain_config`.
+
+## Usage
+
+```sh
+python ivr_generate_diagrams.py --account_alias <alias> [--base-dir <dir>] [--name-pattern <regex>]
+```
+
+### Arguments
+
+- `--account_alias`: (Optional) Alias for a stored credential object in `private/credentials.py`.
+- `--username` / `--password`: (Optional) Provide credentials directly instead of an alias.
+- `--hostalias`: (Optional) Five9 host alias. Default is `us`. Options are `us`, `ca`, `eu`, `frk`, `in`.
+- `--base-dir`: (Optional) Base directory for output. A subfolder named for the Five9 domain is created inside it. Default is `private` (git-ignored).
+- `--name-pattern`: (Optional) Regex to filter IVR script names. Default is all scripts.
+
+### Example
+
+```sh
+python ivr_generate_diagrams.py --account_alias default_account --name-pattern "^Main"
+```
+
+## Output
+
+Files are written to `<base-dir>/<Five9 domain name>/ivr-documentation/<timestamp>/`. For each matching IVR script:
+
+- `<name>.svg`: styled call-flow diagram, ready for Lucid import.
+- `<name>.md`: per-module decoded prompts, branch transitions, and a Script Variables inventory (diff-friendly documentation).
+
+The timestamped folder uses the current run time, so repeated exports do not overwrite previous diagrams.
+
+## Credit
+
+The SVG layout and rendering engine was originally written as a standalone `five9_to_lucid.py` utility by a Five9 colleague and adapted into this library.
+
 # Skill Transfer Module Usage
 
 This script extracts skill transfer modules from a Five9 XML response and outputs the data to a CSV file.

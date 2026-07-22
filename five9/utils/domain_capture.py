@@ -9,6 +9,7 @@ import zeep
 
 from five9 import five9_session
 from .campaign_profile_comprehension import demystify_filter
+from . import ivr_diagram
 
 API_SLEEP_INTERVAL = 0.3
 
@@ -52,10 +53,12 @@ class Five9DomainConfig:
         api_hostname_alias=None,
         sync_target_domain=None,
         methods=METHODS,
+        generate_ivr_diagrams=False,
     ):
         self.client = client
         self.sync_target_domain = sync_target_domain
         self.methods = methods
+        self.generate_ivr_diagrams = generate_ivr_diagrams
 
         self.domain_objects = {}
 
@@ -106,6 +109,8 @@ class Five9DomainConfig:
 
         self.vccConfig = self.client.service.getVCCConfiguration()
 
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
         # Use current working directory instead of hardcoded path
         current_working_directory = os.getcwd()
 
@@ -113,6 +118,8 @@ class Five9DomainConfig:
             current_working_directory,  # Change from os.path.dirname(__file__)
             "domain_snapshots",
             f"{self.vccConfig.domainName}",
+            "ivr-documentation",
+            timestamp,
         )
 
         # delete the contents of the domain snapshot folder if it exists, except for the .git folder
@@ -217,12 +224,32 @@ class Five9DomainConfig:
             ] = zeep.helpers.serialize_object(domain_object, dict)
             target_path = os.path.join(subfolder_path, object_name)
             os.makedirs(os.path.dirname(target_path), exist_ok=True)
-            self.write_object_to_target_path(
-                target_path,
-                self.domain_objects[f"{parent_method_name}_{subfolder_name}"][
-                    object_name
-                ],
-            )
+            captured_object = self.domain_objects[
+                f"{parent_method_name}_{subfolder_name}"
+            ][object_name]
+            self.write_object_to_target_path(target_path, captured_object)
+
+            if self.generate_ivr_diagrams and subfolder_name == "ivrs":
+                self.write_ivr_documentation(target_path, object_name, captured_object)
+
+    def write_ivr_documentation(self, target_path, ivr_name, captured_ivr):
+        """Emit an SVG call-flow and a Markdown prompt summary alongside the
+        captured IVR JSON. Enabled by ``generate_ivr_diagrams=True``.
+
+        Failures for a single IVR are logged and skipped so one malformed
+        script never aborts a full domain capture.
+        """
+        xml_definition = captured_ivr.get("xmlDefinition")
+        if not xml_definition:
+            return
+        try:
+            with open(f"{target_path}.svg", "w") as svg_file:
+                svg_file.write(ivr_diagram.ivr_to_svg(xml_definition, name=ivr_name))
+            with open(f"{target_path}.md", "w") as md_file:
+                md_file.write(ivr_diagram.ivr_to_text(xml_definition, name=ivr_name))
+            print(f"\t\t\tdiagram + docs: {ivr_name}")
+        except Exception as e:
+            print(f"\t\t\tskipped diagram for {ivr_name}: {e}")
 
     def get_domain_objects(self, methods=None):
         if methods is None:

@@ -1,3 +1,19 @@
+"""Prepare users for migration by adjusting selected role permissions.
+
+Usage examples:
+    # Dry-run (default): shows what would change, writes audit records.
+    python examples/user_management/migration_user_prep.py --account_alias default_account
+
+    # Dry-run against a subset of users from CSV/plain-text list.
+    python examples/user_management/migration_user_prep.py --account_alias default_account --users_csv private/target_users.csv
+
+    # Apply changes for agent-role updates only.
+    python examples/user_management/migration_user_prep.py --account_alias default_account --real_run
+
+    # Apply changes across agent, supervisor, and admin roles.
+    python examples/user_management/migration_user_prep.py --account_alias default_account --all_user_roles --real_run
+"""
+
 from five9.utils.common import common_parser_arguments, create_five9_client
 import logging
 from pathlib import Path
