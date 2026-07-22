@@ -178,6 +178,325 @@ FOREIGN_SCRIPT_IVR = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 </ivrScript>
 """
 
+COMPLEX_IF_IVR = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<ivrScript>
+  <domainId>131792</domainId>
+  <properties/>
+  <modules>
+    <incomingCall>
+      <singleDescendant>7DF8903F3DDA41DDA3EB96BC6C5F939E</singleDescendant>
+      <moduleName>IncomingCall4</moduleName>
+      <locationX>128</locationX>
+      <locationY>139</locationY>
+      <moduleId>D9DED4ED05BE486B873DCF6DC3194719</moduleId>
+      <data/>
+    </incomingCall>
+    <foreignScript>
+      <ascendants>D9DED4ED05BE486B873DCF6DC3194719</ascendants>
+      <singleDescendant>88E1F94302E54DC1A97A66F98ED494C5</singleDescendant>
+      <moduleName>ForeignScript5</moduleName>
+      <locationX>246</locationX>
+      <locationY>139</locationY>
+      <moduleId>7DF8903F3DDA41DDA3EB96BC6C5F939E</moduleId>
+      <data>
+        <ivrScript>
+          <id>300000000000063</id>
+          <name>_fs_contactLookup</name>
+        </ivrScript>
+        <passCRM>true</passCRM>
+        <returnCRM>true</returnCRM>
+        <params>
+          <entry>
+            <key>sampleInputVarible</key>
+            <value>
+              <isVarSelected>true</isVarSelected>
+              <variableName>sampleVarSendToFS</variableName>
+            </value>
+          </entry>
+        </params>
+        <returnVals>
+          <entry>
+            <key>someVariableToSetFromTheChildScript</key>
+            <value>sampleOutputVariable</value>
+          </entry>
+        </returnVals>
+        <isConsistent>true</isConsistent>
+      </data>
+    </foreignScript>
+    <hangup>
+      <ascendants>88E1F94302E54DC1A97A66F98ED494C5</ascendants>
+      <moduleName>Hangup24</moduleName>
+      <locationX>391</locationX>
+      <locationY>147</locationY>
+      <moduleId>2AA87B2576FF4B139878E298D77E0221</moduleId>
+      <data>
+        <dispo>
+          <id>0</id>
+          <name>No Disposition</name>
+        </dispo>
+        <returnToCallingModule>true</returnToCallingModule>
+        <errCode>
+          <isVarSelected>false</isVarSelected>
+          <integerValue>
+            <value>0</value>
+          </integerValue>
+        </errCode>
+        <errDescription>
+          <isVarSelected>false</isVarSelected>
+          <stringValue>
+            <value></value>
+            <id>0</id>
+          </stringValue>
+        </errDescription>
+        <overwriteDisposition>true</overwriteDisposition>
+      </data>
+    </hangup>
+    <ifElse>
+      <ascendants>7DF8903F3DDA41DDA3EB96BC6C5F939E</ascendants>
+      <moduleName>SampleIfWithANY</moduleName>
+      <locationX>311</locationX>
+      <locationY>293</locationY>
+      <moduleId>88E1F94302E54DC1A97A66F98ED494C5</moduleId>
+      <data>
+        <branches>
+          <entry>
+            <key>IF</key>
+            <value>
+              <name>IF</name>
+              <desc>6A5CE2494D0F4C7FBBB8BCBC40147FCB</desc>
+            </value>
+          </entry>
+          <entry>
+            <key>ELSE</key>
+            <value>
+              <name>ELSE</name>
+              <desc>2AA87B2576FF4B139878E298D77E0221</desc>
+            </value>
+          </entry>
+        </branches>
+        <customCondition>1 OR 2</customCondition>
+        <conditionGrouping>ANY</conditionGrouping>
+        <conditions>
+          <comparisonType>EQUALS</comparisonType>
+          <joinMode>AND</joinMode>
+          <rightOperand>
+            <isVarSelected>false</isVarSelected>
+            <stringValue>
+              <value>15</value>
+              <id>0</id>
+            </stringValue>
+          </rightOperand>
+          <leftOperand>
+            <isVarSelected>true</isVarSelected>
+            <variableName>__BUFFER__</variableName>
+          </leftOperand>
+        </conditions>
+        <conditions>
+          <comparisonType>EQUALS</comparisonType>
+          <joinMode>AND</joinMode>
+          <rightOperand>
+            <isVarSelected>false</isVarSelected>
+            <stringValue>
+              <value>bbb</value>
+              <id>0</id>
+            </stringValue>
+          </rightOperand>
+          <leftOperand>
+            <isVarSelected>true</isVarSelected>
+            <variableName>sampleVarSendToFS</variableName>
+          </leftOperand>
+        </conditions>
+      </data>
+    </ifElse>
+    <ifElse>
+      <ascendants>88E1F94302E54DC1A97A66F98ED494C5</ascendants>
+      <moduleName>IfElse16</moduleName>
+      <locationX>493</locationX>
+      <locationY>314</locationY>
+      <moduleId>6A5CE2494D0F4C7FBBB8BCBC40147FCB</moduleId>
+      <data>
+        <branches>
+          <entry>
+            <key>IF</key>
+            <value>
+              <name>IF</name>
+              <desc>FFF6A64147FB45B783CBF83F6AFA6ED4</desc>
+            </value>
+          </entry>
+          <entry>
+            <key>ELSE</key>
+            <value>
+              <name>ELSE</name>
+              <desc>2AA87B2576FF4B139878E298D77E0221</desc>
+            </value>
+          </entry>
+        </branches>
+        <customCondition>(1 AND 2) AND NOT 3</customCondition>
+        <conditionGrouping>CUSTOM</conditionGrouping>
+        <conditions>
+          <comparisonType>EQUALS</comparisonType>
+          <joinMode>AND</joinMode>
+          <rightOperand>
+            <isVarSelected>false</isVarSelected>
+            <integerValue>
+              <value>15</value>
+            </integerValue>
+          </rightOperand>
+          <leftOperand>
+            <isVarSelected>true</isVarSelected>
+            <variableName>Contact.AttemptsInt</variableName>
+          </leftOperand>
+        </conditions>
+        <conditions>
+          <comparisonType>LIKE</comparisonType>
+          <joinMode>AND</joinMode>
+          <rightOperand>
+            <isVarSelected>false</isVarSelected>
+            <stringValue>
+              <value>something%</value>
+              <id>0</id>
+            </stringValue>
+          </rightOperand>
+          <leftOperand>
+            <isVarSelected>true</isVarSelected>
+            <variableName>__BUFFER__</variableName>
+          </leftOperand>
+        </conditions>
+        <conditions>
+          <comparisonType>EQUALS</comparisonType>
+          <joinMode>AND</joinMode>
+          <rightOperand>
+            <isVarSelected>false</isVarSelected>
+            <stringValue>
+              <value>15</value>
+              <id>0</id>
+            </stringValue>
+          </rightOperand>
+          <leftOperand>
+            <isVarSelected>true</isVarSelected>
+            <variableName>__BUFFER__</variableName>
+          </leftOperand>
+        </conditions>
+      </data>
+    </ifElse>
+    <hangup>
+      <ascendants>6A5CE2494D0F4C7FBBB8BCBC40147FCB</ascendants>
+      <moduleName>Hangup37</moduleName>
+      <locationX>766</locationX>
+      <locationY>281</locationY>
+      <moduleId>FFF6A64147FB45B783CBF83F6AFA6ED4</moduleId>
+      <data>
+        <dispo>
+          <id>0</id>
+          <name>No Disposition</name>
+        </dispo>
+        <returnToCallingModule>true</returnToCallingModule>
+        <errCode>
+          <isVarSelected>false</isVarSelected>
+          <integerValue>
+            <value>0</value>
+          </integerValue>
+        </errCode>
+        <errDescription>
+          <isVarSelected>false</isVarSelected>
+          <stringValue>
+            <value></value>
+            <id>0</id>
+          </stringValue>
+        </errDescription>
+        <overwriteDisposition>true</overwriteDisposition>
+      </data>
+    </hangup>
+  </modules>
+  <modulesOnHangup>
+    <startOnHangup>
+      <singleDescendant>06D9BB08C82E41269790CD6C795D27C7</singleDescendant>
+      <moduleName>StartOnHangup4</moduleName>
+      <locationX>20</locationX>
+      <locationY>10</locationY>
+      <moduleId>B388B27C1A46451CAEC57C5D4F49BB3D</moduleId>
+    </startOnHangup>
+    <hangup>
+      <ascendants>B388B27C1A46451CAEC57C5D4F49BB3D</ascendants>
+      <moduleName>Hangup5</moduleName>
+      <locationX>120</locationX>
+      <locationY>10</locationY>
+      <moduleId>06D9BB08C82E41269790CD6C795D27C7</moduleId>
+      <data>
+        <dispo>
+          <id>-17</id>
+          <name>Caller Disconnected</name>
+        </dispo>
+        <returnToCallingModule>true</returnToCallingModule>
+        <errCode>
+          <isVarSelected>false</isVarSelected>
+          <integerValue>
+            <value>0</value>
+          </integerValue>
+        </errCode>
+        <errDescription>
+          <isVarSelected>false</isVarSelected>
+          <stringValue>
+            <value></value>
+            <id>0</id>
+          </stringValue>
+        </errDescription>
+        <overwriteDisposition>false</overwriteDisposition>
+      </data>
+    </hangup>
+  </modulesOnHangup>
+  <userVariables>
+    <entry>
+      <key>sampleVarSendToFS</key>
+      <value>
+        <name>sampleVarSendToFS</name>
+        <description></description>
+        <stringValue>
+          <value></value>
+          <id>0</id>
+        </stringValue>
+        <attributes>192</attributes>
+        <isNullValue>true</isNullValue>
+      </value>
+    </entry>
+    <entry>
+      <key>someVariableToSetFromTheChildScript</key>
+      <value>
+        <name>someVariableToSetFromTheChildScript</name>
+        <description></description>
+        <stringValue>
+          <value></value>
+          <id>0</id>
+        </stringValue>
+        <attributes>8</attributes>
+        <isNullValue>true</isNullValue>
+      </value>
+    </entry>
+  </userVariables>
+  <multiLanguagesPrompts/>
+  <multiLanguagesVIVRPrompts/>
+  <multiLanguagesTextPrompts/>
+  <multiLanguagesMenuChoices/>
+  <multiLanguagesEwtAnnouncement/>
+  <languages/>
+  <functions/>
+  <defaultLanguage>en-US</defaultLanguage>
+  <defaultMethod>GET</defaultMethod>
+  <defaultFetchTimeout>5</defaultFetchTimeout>
+  <showLabelNames>true</showLabelNames>
+  <defaultVivrTimeout>5</defaultVivrTimeout>
+  <unicodeEncoding>true</unicodeEncoding>
+  <useShortcut>false</useShortcut>
+  <resetErrorCode>true</resetErrorCode>
+  <showAllChannelPrompts>false</showAllChannelPrompts>
+  <extContactFieldsInput>true</extContactFieldsInput>
+  <extContactFieldsOutput>true</extContactFieldsOutput>
+  <useIvrTimeZoneInAssignment>true</useIvrTimeZoneInAssignment>
+  <timeoutInMilliseconds>3600000</timeoutInMilliseconds>
+  <version>1300001</version>
+</ivrScript>
+"""
+
 
 class TestIVRDiagram(unittest.TestCase):
     def test_parse_ivr_nodes_and_edges(self):
@@ -223,6 +542,24 @@ class TestIVRDiagram(unittest.TestCase):
         self.assertIn("[HELLO]", svg)
         self.assertIn("someVariableToSetFromTheChildScript", svg)
         self.assertIn("{{sampleOutputVariable}}", svg)
+
+    def test_complex_ifelse_documents_row_numbers_and_expression(self):
+      doc = ivr_diagram.ivr_to_text(COMPLEX_IF_IVR, name="Complex If Demo")
+      self.assertIn("1. IF __BUFFER__ EQUALS \"15\"", doc)
+      self.assertIn("2. IF sampleVarSendToFS EQUALS \"bbb\"", doc)
+      self.assertIn("Grouping: ANY", doc)
+      self.assertIn("Expression: 1 OR 2", doc)
+      self.assertIn("1. IF Contact.AttemptsInt EQUALS 15", doc)
+      self.assertIn("2. IF __BUFFER__ LIKE \"something%\"", doc)
+      self.assertIn("3. IF __BUFFER__ EQUALS \"15\"", doc)
+      self.assertIn("Expression: (1 AND 2) AND NOT 3", doc)
+
+    def test_complex_ifelse_svg_includes_row_numbers_and_expression(self):
+      svg = ivr_diagram.ivr_to_svg(COMPLEX_IF_IVR)
+      self.assertIn("1. IF __BUFFER__ EQUALS &quot;15&quot;", svg)
+      self.assertIn("Grouping: ANY", svg)
+      self.assertIn("Expression: 1 OR 2", svg)
+      self.assertIn("Expression: (1 AND 2) AND NOT 3", svg)
 
     def test_empty_script_raises(self):
         with self.assertRaises(ValueError):

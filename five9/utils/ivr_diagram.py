@@ -200,6 +200,12 @@ def operand_str(op):
     if op is None: return '?'
     if op.findtext('isVarSelected') == 'true':
         return op.findtext('variableName') or '?'
+    int_value = op.findtext('.//integerValue/value')
+    if int_value is not None:
+        return sanitize(int_value)
+    bool_value = op.findtext('.//booleanValue/value')
+    if bool_value is not None:
+        return sanitize(bool_value)
     v = op.findtext('.//value')
     return '"%s"' % v if v is not None else '?'
 
@@ -277,13 +283,21 @@ def _build(root):
                         body.append('%s = %s' % (vn, '""' if val is None else val))
             if tag == 'ifElse':
                 conds = []
-                for c in d.findall('conditions'):
+                for idx, c in enumerate(d.findall('conditions'), start=1):
                     lo = operand_str(c.find('leftOperand'))
                     ro = operand_str(c.find('rightOperand'))
-                    conds.append('IF %s %s %s' % (lo, c.findtext('comparisonType') or '?', ro))
+                    conds.append('%d. IF %s %s %s' % (
+                        idx, lo, c.findtext('comparisonType') or '?', ro
+                    ))
                 grouping = d.findtext('conditionGrouping')
+                custom_expr = d.findtext('customCondition')
                 body += conds
-                if len(conds) > 1 and grouping: body.append('(match %s)' % grouping)
+                if grouping:
+                    body.append('Grouping: %s' % grouping)
+                if custom_expr:
+                    body.append('Expression: %s' % custom_expr)
+                elif len(conds) > 1 and grouping:
+                    body.append('(match %s)' % grouping)
             if tag == 'case':
                 var = None
                 for e in d.findall('branches/entry'):
