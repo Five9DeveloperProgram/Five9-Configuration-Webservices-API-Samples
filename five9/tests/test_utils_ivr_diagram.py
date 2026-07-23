@@ -6,7 +6,6 @@ from five9.utils import ivr_diagram
 
 
 def _tts(text):
-    """Build a gzip+Base64 encoded speakElement payload like the API returns."""
     raw = (
         "<speakElement><textElement><body>%s</body></textElement></speakElement>"
         % text
@@ -14,7 +13,6 @@ def _tts(text):
     return base64.b64encode(gzip.compress(raw.encode("utf-8"))).decode("utf-8")
 
 
-# A minimal but representative IVR: incomingCall -> play (with TTS) -> hangup.
 SAMPLE_IVR = """<?xml version="1.0" encoding="UTF-8"?>
 <ivrScript>
   <modules>
@@ -41,6 +39,7 @@ SAMPLE_IVR = """<?xml version="1.0" encoding="UTF-8"?>
     </hangup>
   </modules>
 </ivrScript>""" % _tts("Welcome to support")
+
 
 FOREIGN_SCRIPT_IVR = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <ivrScript>
@@ -99,132 +98,6 @@ FOREIGN_SCRIPT_IVR = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
     </foreignScript>
     <hangup>
       <ascendants>7DF8903F3DDA41DDA3EB96BC6C5F939E</ascendants>
-      <moduleName>Hangup24</moduleName>
-      <locationX>391</locationX>
-      <locationY>147</locationY>
-      <moduleId>2AA87B2576FF4B139878E298D77E0221</moduleId>
-      <data>
-        <dispo>
-          <id>0</id>
-          <name>No Disposition</name>
-        </dispo>
-        <returnToCallingModule>true</returnToCallingModule>
-        <errCode>
-          <isVarSelected>false</isVarSelected>
-          <integerValue>
-            <value>0</value>
-          </integerValue>
-        </errCode>
-        <errDescription>
-          <isVarSelected>false</isVarSelected>
-          <stringValue>
-            <value></value>
-            <id>0</id>
-          </stringValue>
-        </errDescription>
-        <overwriteDisposition>true</overwriteDisposition>
-      </data>
-    </hangup>
-  </modules>
-  <userVariables>
-    <entry>
-      <key>sampleVarSendToFS</key>
-      <value>
-        <name>sampleVarSendToFS</name>
-        <description></description>
-        <stringValue>
-          <value></value>
-          <id>0</id>
-        </stringValue>
-        <attributes>192</attributes>
-        <isNullValue>true</isNullValue>
-      </value>
-    </entry>
-    <entry>
-      <key>sampleOutputVariable</key>
-      <value>
-        <name>sampleOutputVariable</name>
-        <description></description>
-        <stringValue>
-          <value>a varialbe with a default value</value>
-          <id>0</id>
-        </stringValue>
-        <attributes>192</attributes>
-        <isNullValue>false</isNullValue>
-      </value>
-    </entry>
-  </userVariables>
-  <multiLanguagesPrompts/>
-  <multiLanguagesVIVRPrompts/>
-  <multiLanguagesTextPrompts/>
-  <multiLanguagesMenuChoices/>
-  <multiLanguagesEwtAnnouncement/>
-  <languages/>
-  <functions/>
-  <defaultLanguage>en-US</defaultLanguage>
-  <defaultMethod>GET</defaultMethod>
-  <defaultFetchTimeout>5</defaultFetchTimeout>
-  <showLabelNames>true</showLabelNames>
-  <defaultVivrTimeout>5</defaultVivrTimeout>
-  <unicodeEncoding>true</unicodeEncoding>
-  <useShortcut>false</useShortcut>
-  <resetErrorCode>true</resetErrorCode>
-  <showAllChannelPrompts>false</showAllChannelPrompts>
-  <extContactFieldsInput>true</extContactFieldsInput>
-  <extContactFieldsOutput>true</extContactFieldsOutput>
-  <useIvrTimeZoneInAssignment>true</useIvrTimeZoneInAssignment>
-  <timeoutInMilliseconds>3600000</timeoutInMilliseconds>
-  <version>1300001</version>
-</ivrScript>
-"""
-
-COMPLEX_IF_IVR = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<ivrScript>
-  <domainId>131792</domainId>
-  <properties/>
-  <modules>
-    <incomingCall>
-      <singleDescendant>7DF8903F3DDA41DDA3EB96BC6C5F939E</singleDescendant>
-      <moduleName>IncomingCall4</moduleName>
-      <locationX>128</locationX>
-      <locationY>139</locationY>
-      <moduleId>D9DED4ED05BE486B873DCF6DC3194719</moduleId>
-      <data/>
-    </incomingCall>
-    <foreignScript>
-      <ascendants>D9DED4ED05BE486B873DCF6DC3194719</ascendants>
-      <singleDescendant>88E1F94302E54DC1A97A66F98ED494C5</singleDescendant>
-      <moduleName>ForeignScript5</moduleName>
-      <locationX>246</locationX>
-      <locationY>139</locationY>
-      <moduleId>7DF8903F3DDA41DDA3EB96BC6C5F939E</moduleId>
-      <data>
-        <ivrScript>
-          <id>300000000000063</id>
-          <name>_fs_contactLookup</name>
-        </ivrScript>
-        <passCRM>true</passCRM>
-        <returnCRM>true</returnCRM>
-        <params>
-          <entry>
-            <key>sampleInputVarible</key>
-            <value>
-              <isVarSelected>true</isVarSelected>
-              <variableName>sampleVarSendToFS</variableName>
-            </value>
-          </entry>
-        </params>
-        <returnVals>
-          <entry>
-            <key>someVariableToSetFromTheChildScript</key>
-            <value>sampleOutputVariable</value>
-          </entry>
-        </returnVals>
-        <isConsistent>true</isConsistent>
-      </data>
-    </foreignScript>
-    <hangup>
-      <ascendants>88E1F94302E54DC1A97A66F98ED494C5</ascendants>
       <moduleName>Hangup24</moduleName>
       <locationX>391</locationX>
       <locationY>147</locationY>
@@ -460,9 +333,9 @@ COMPLEX_IF_IVR = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
       </value>
     </entry>
     <entry>
-      <key>someVariableToSetFromTheChildScript</key>
+      <key>sampleOutputVariable</key>
       <value>
-        <name>someVariableToSetFromTheChildScript</name>
+        <name>sampleOutputVariable</name>
         <description></description>
         <stringValue>
           <value></value>
@@ -494,8 +367,92 @@ COMPLEX_IF_IVR = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
   <useIvrTimeZoneInAssignment>true</useIvrTimeZoneInAssignment>
   <timeoutInMilliseconds>3600000</timeoutInMilliseconds>
   <version>1300001</version>
-</ivrScript>
-"""
+</ivrScript>"""
+
+
+FUNCTION_IVR = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<ivrScript>
+  <domainId>131792</domainId>
+  <properties/>
+  <modules>
+    <incomingCall>
+      <singleDescendant>2</singleDescendant>
+      <moduleName>Start</moduleName>
+      <moduleId>1</moduleId>
+      <data/>
+    </incomingCall>
+    <setVariable>
+      <singleDescendant>3</singleDescendant>
+      <moduleName>SetJsonValue</moduleName>
+      <moduleId>2</moduleId>
+      <data>
+        <expressions>
+          <variableName>resultVar</variableName>
+          <isFunction>true</isFunction>
+          <functionType>normalizePhone</functionType>
+          <arguments>
+            <arguments>
+              <isVarSelected>true</isVarSelected>
+              <variableName>rawNumber</variableName>
+            </arguments>
+            <arguments>
+              <isVarSelected>false</isVarSelected>
+              <stringValue>
+                <value>US</value>
+                <id>0</id>
+              </stringValue>
+            </arguments>
+          </arguments>
+        </expressions>
+      </data>
+    </setVariable>
+    <hangup>
+      <ascendants>2</ascendants>
+      <moduleName>End</moduleName>
+      <moduleId>3</moduleId>
+      <data/>
+    </hangup>
+  </modules>
+  <userVariables/>
+  <functions>
+    <entry>
+      <key>ABCDEF123456</key>
+      <value>
+        <jsFunctionId>ABCDEF123456</jsFunctionId>
+        <description>Sample helper</description>
+        <returnType>STRING</returnType>
+        <name>normalizePhone</name>
+        <arguments>
+          <arguments>
+            <name>rawNumber</name>
+            <description>Unformatted phone number</description>
+            <type>STRING</type>
+          </arguments>
+          <arguments>
+            <name>defaultCountry</name>
+            <description></description>
+            <type>STRING</type>
+          </arguments>
+        </arguments>
+        <functionBody>H4sIAAAAAAAAACtKLSktylMwBAALoH20CAAAAA==</functionBody>
+      </value>
+    </entry>
+  </functions>
+  <defaultLanguage>en-US</defaultLanguage>
+  <defaultMethod>GET</defaultMethod>
+  <defaultFetchTimeout>5</defaultFetchTimeout>
+  <showLabelNames>true</showLabelNames>
+  <defaultVivrTimeout>5</defaultVivrTimeout>
+  <unicodeEncoding>true</unicodeEncoding>
+  <useShortcut>false</useShortcut>
+  <resetErrorCode>true</resetErrorCode>
+  <showAllChannelPrompts>false</showAllChannelPrompts>
+  <extContactFieldsInput>true</extContactFieldsInput>
+  <extContactFieldsOutput>true</extContactFieldsOutput>
+  <useIvrTimeZoneInAssignment>true</useIvrTimeZoneInAssignment>
+  <timeoutInMilliseconds>3600000</timeoutInMilliseconds>
+  <version>1300001</version>
+</ivrScript>"""
 
 
 class TestIVRDiagram(unittest.TestCase):
@@ -515,51 +472,58 @@ class TestIVRDiagram(unittest.TestCase):
         self.assertIn("</svg>", svg)
         self.assertIn("Greeting", svg)
 
-    def test_ivr_to_text_documents_modules_and_transitions(self):
+    def test_ivr_to_text_documents_summary_sections(self):
         doc = ivr_diagram.ivr_to_text(SAMPLE_IVR, name="SupportFlow")
         self.assertIn("# IVR: SupportFlow", doc)
-        self.assertIn("Greeting", doc)
-        self.assertIn("Welcome to support", doc)
-        self.assertIn("-> **End**", doc)
-
-    def test_foreign_script_documents_inputs_and_outputs(self):
-        doc = ivr_diagram.ivr_to_text(FOREIGN_SCRIPT_IVR, name="Inbound Demo")
-        self.assertIn("Script: _fs_contactLookup", doc)
-        self.assertIn("Pass CRM: true", doc)
-        self.assertIn("Return CRM: true", doc)
-        self.assertIn("Input: sampleInputVarible <- *{{sampleVarSendToFS}}*", doc)
-        self.assertIn("Input: sampleConstantInput <- **[HELLO]**", doc)
-        self.assertIn("Output: someVariableToSetFromTheChildScript -> *{{sampleOutputVariable}}*", doc)
         self.assertIn("## Script Variables", doc)
-        self.assertIn("**sampleVarSendToFS**", doc)
-        self.assertIn("**sampleOutputVariable**", doc)
-        self.assertIn("- Default: a varialbe with a default value", doc)
-    def test_foreign_script_svg_includes_input_and_output_labels(self):
-        svg = ivr_diagram.ivr_to_svg(FOREIGN_SCRIPT_IVR)
-        self.assertIn("sampleInputVarible", svg)
-        self.assertIn("{{sampleVarSendToFS}}", svg)
-        self.assertIn("sampleConstantInput", svg)
-        self.assertIn("[HELLO]", svg)
-        self.assertIn("someVariableToSetFromTheChildScript", svg)
-        self.assertIn("{{sampleOutputVariable}}", svg)
+        self.assertIn("No script variables defined.", doc)
+        self.assertIn("## JavaScript Functions", doc)
+        self.assertIn("No JavaScript functions defined.", doc)
+        self.assertIn("## Foreign Scripts", doc)
+        self.assertIn("No foreign scripts defined.", doc)
+
+    def test_foreign_script_documents_summary_grouping(self):
+        doc = ivr_diagram.ivr_to_text(FOREIGN_SCRIPT_IVR, name="Foreign Script Demo")
+        self.assertIn("## Foreign Scripts", doc)
+        self.assertIn("_fs_contactLookup", doc)
+        self.assertIn("Module: ForeignScript5", doc)
+        self.assertIn("Parameters:", doc)
+        self.assertIn("sampleInputVarible", doc)
+        self.assertIn("*{{sampleVarSendToFS}}*", doc)
+        self.assertIn("sampleConstantInput", doc)
+        self.assertIn("**[HELLO]**", doc)
+        self.assertIn("Return Values:", doc)
+        self.assertIn("someVariableToSetFromTheChildScript", doc)
+        self.assertIn("*{{sampleOutputVariable}}*", doc)
+        self.assertIn("## Script Variables", doc)
+        self.assertIn("| Name | Default | Description |", doc)
+        self.assertIn("| sampleVarSendToFS |", doc)
+        self.assertIn("| sampleOutputVariable |", doc)
+        self.assertEqual(doc.count("| Name | Default | Description |"), 1)
 
     def test_complex_ifelse_documents_row_numbers_and_expression(self):
-      doc = ivr_diagram.ivr_to_text(COMPLEX_IF_IVR, name="Complex If Demo")
-      self.assertIn("1. IF __BUFFER__ EQUALS \"15\"", doc)
-      self.assertIn("2. IF sampleVarSendToFS EQUALS \"bbb\"", doc)
-      self.assertIn("Grouping: ANY", doc)
-      self.assertIn("Expression: 1 OR 2", doc)
-      self.assertIn("1. IF Contact.AttemptsInt EQUALS 15", doc)
-      self.assertIn("2. IF __BUFFER__ LIKE \"something%\"", doc)
-      self.assertIn("3. IF __BUFFER__ EQUALS \"15\"", doc)
-      self.assertIn("Expression: (1 AND 2) AND NOT 3", doc)
+        svg = ivr_diagram.ivr_to_svg(FOREIGN_SCRIPT_IVR, name="Complex If Demo")
+        self.assertIn("1. IF __BUFFER__ EQUALS &quot;15&quot;", svg)
+        self.assertIn("2. IF sampleVarSendToFS EQUALS", svg)
+        self.assertIn("&quot;bbb&quot;", svg)
+        self.assertIn("Grouping: ANY", svg)
+        self.assertIn("Expression: 1 OR 2", svg)
+        self.assertIn("1. IF Contact.AttemptsInt EQUALS", svg)
+        self.assertIn("15</text>", svg)
+        self.assertIn("2. IF __BUFFER__ LIKE &quot;something%&quot;", svg)
+        self.assertIn("3. IF __BUFFER__ EQUALS &quot;15&quot;", svg)
+        self.assertIn("Grouping: CUSTOM", svg)
+        self.assertIn("Expression: (1 AND 2) AND NOT 3", svg)
 
-    def test_complex_ifelse_svg_includes_row_numbers_and_expression(self):
-      svg = ivr_diagram.ivr_to_svg(COMPLEX_IF_IVR)
-      self.assertIn("1. IF __BUFFER__ EQUALS &quot;15&quot;", svg)
-      self.assertIn("Grouping: ANY", svg)
-      self.assertIn("Expression: 1 OR 2", svg)
-      self.assertIn("Expression: (1 AND 2) AND NOT 3", svg)
+    def test_function_summary_lists_arguments(self):
+        doc = ivr_diagram.ivr_to_text(FUNCTION_IVR, name="Function Demo")
+        self.assertIn("## JavaScript Functions", doc)
+        self.assertIn("normalizePhone", doc)
+        self.assertIn("Return Type: STRING", doc)
+        self.assertIn("Description: Sample helper", doc)
+        self.assertIn("rawNumber: STRING", doc)
+        self.assertIn("defaultCountry: STRING", doc)
+        self.assertIn("Used By: SetJsonValue", doc)
 
     def test_empty_script_raises(self):
         with self.assertRaises(ValueError):

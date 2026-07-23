@@ -137,6 +137,88 @@ def script_variable_default(value_el):
             return sanitize(value)
     return sanitize(value_el.findtext('name') or '?')
 
+def script_variable_summary_lines(entry):
+    var_name = entry.findtext('key') or entry.findtext('value/name') or '?'
+    value_el = entry.find('value')
+    description = sanitize(value_el.findtext('description') if value_el is not None else '')
+    default_value = script_variable_default(value_el)
+    is_null = value_el.findtext('isNullValue') if value_el is not None else None
+    default_text = '%s%s' % (default_value, ' (null)' if is_null == 'true' else '')
+    return '| %s | %s | %s |' % (sanitize(var_name), default_text, description)
+
+def function_summary_lines(entry, used_by=None):
+    value_el = entry.find('value')
+    name = value_el.findtext('name') if value_el is not None else None
+    return_type = value_el.findtext('returnType') if value_el is not None else None
+    description = sanitize(value_el.findtext('description') if value_el is not None else '')
+    args = []
+    if value_el is not None:
+        for arg in value_el.findall('arguments/arguments'):
+            arg_name = arg.findtext('name') or '?'
+            arg_type = arg.findtext('type') or '?'
+            args.append('%s: %s' % (sanitize(arg_name), sanitize(arg_type)))
+    lines = ['- **%s**' % sanitize(name or '?')]
+    if return_type:
+        lines.append('  - Return Type: %s' % sanitize(return_type))
+    if description:
+        lines.append('  - Description: %s' % description)
+    lines.append('  - Arguments: %s' % (', '.join(args) if args else 'None'))
+    lines.append('  - Used By: %s' % (', '.join(used_by) if used_by else 'None'))
+    return lines
+
+def function_usage_map(root):
+    usage = defaultdict(list)
+    for container_name in ('modules', 'modulesOnHangup'):
+        container = root.find(container_name)
+        if container is None:
+            continue
+        for module in container:
+            module_name = module.findtext('moduleName') or module.findtext('moduleId') or module.tag
+            if module.tag != 'setVariable':
+                continue
+            for ex in module.findall('data/expressions'):
+                if ex.findtext('isFunction') == 'true':
+                    fn = ex.findtext('.//functionType') or ex.findtext('.//name') or 'FUNC'
+                    if module_name not in usage[fn]:
+                        usage[fn].append(module_name)
+    return usage
+
+def foreign_script_summary_lines(root):
+    grouped = defaultdict(list)
+    for container_name in ('modules', 'modulesOnHangup'):
+        container = root.find(container_name)
+        if container is None:
+            continue
+        for module in container.findall('foreignScript'):
+            script_name = module.findtext('data/ivrScript/name') or '?'
+            module_name = module.findtext('moduleName') or module.findtext('moduleId') or 'foreignScript'
+            module_lines = []
+            if module.findtext('data/passCRM') is not None:
+                module_lines.append('Pass CRM: %s' % module.findtext('data/passCRM'))
+            if module.findtext('data/returnCRM') is not None:
+                module_lines.append('Return CRM: %s' % module.findtext('data/returnCRM'))
+            params = []
+            for param in module.findall('data/params/entry'):
+                key = param.findtext('key') or '?'
+                value_el = param.find('value')
+                if value_el is None:
+                    continue
+                is_var = value_el.findtext('isVarSelected') == 'true'
+                raw_value = value_el.findtext('variableName') if is_var else value_el.findtext('.//value')
+                params.append('Parameter: %s <- %s' % (key, format_foreign_value(raw_value or '?', is_var)))
+            returns = []
+            for ret in module.findall('data/returnVals/entry'):
+                key = ret.findtext('key') or '?'
+                raw_value = ret.findtext('value') or '?'
+                returns.append('Return: %s -> %s' % (key, format_foreign_value(raw_value, True)))
+            grouped[script_name].append({
+                'module_name': module_name,
+                'details': module_lines,
+                'params': params,
+                'returns': returns,
+            })
+    return grouped
+
 def svg_text_segments(line):
     segments = []
     pos = 0
@@ -832,61 +914,67 @@ def ivr_to_svg(xml_definition, name=None):
 def ivr_to_text(xml_definition, name=None):
     """IVR ``xmlDefinition`` string -> human-readable Markdown documentation.
 
-    Lists every module with its decoded TTS prompts / configured values and its
-    outbound transitions (branch ports are collapsed into the transition label).
+    Produces a summary document focused on variables, JavaScript functions, and
+    foreign scripts in use.
     """
     nodes, edges = parse_ivr(xml_definition)
     root = ET.fromstring(xml_definition)
-    out = defaultdict(list)
-    for s, d, x in edges:
-        out[s].append((d, x))
-
-    def transitions(mid):
-        """Resolve a module's outbound edges, collapsing PORT nodes into labels."""
-        res = []
-        for d, exc in out.get(mid, []):
-            n = nodes[d]
-            if is_port(n['tag']):
-                label = n['name']
-                if n['body']:
-                    label = ('%s %s' % (label, ' '.join(n['body']))).strip()
-                for d2, exc2 in out.get(d, []):
-                    res.append((nodes[d2]['name'], label, exc2))
-            else:
-                res.append((n['name'], 'on exception' if exc else '', exc))
-        return res
 
     lines = ['# IVR: %s' % (sanitize(name) if name else '(unnamed)'), '']
     modules = [n for n in nodes.values() if not is_port(n['tag'])]
     transition_count = sum(1 for s, _d, _x in edges if not is_port(nodes[s]['tag']))
     lines.append('%d modules, %d transitions' % (len(modules), transition_count))
     lines.append('')
-    for n in modules:
-        lines.append('## %s  (`%s`)' % (n['name'], n['tag']))
-        for b in n['body']:
-            lines.append('- %s' % b)
-        for dest, label, exc in transitions(n['id']):
-            suffix = ' _[%s]_' % label if label else ''
-            lines.append('  - -> **%s**%s' % (dest, suffix))
-        lines.append('')
 
     user_vars = root.findall('userVariables/entry')
     lines.append('## Script Variables')
     lines.append('')
     if user_vars:
+        lines.append('| Name | Default | Description |')
+        lines.append('| --- | --- | --- |')
         for entry in user_vars:
-            var_name = entry.findtext('key') or entry.findtext('value/name') or '?'
-            value_el = entry.find('value')
-            description = sanitize(value_el.findtext('description') if value_el is not None else '')
-            default_value = script_variable_default(value_el)
-            is_null = value_el.findtext('isNullValue') if value_el is not None else None
-            lines.append('- **%s**' % sanitize(var_name))
-            if description:
-                lines.append('  - Description: %s' % description)
-            lines.append('  - Default: %s%s' % (default_value, ' (null)' if is_null == 'true' else ''))
-            lines.append('')
+            lines.append(script_variable_summary_lines(entry))
+        lines.append('')
     else:
         lines.append('- No script variables defined.')
+        lines.append('')
+
+    function_entries = root.findall('functions/entry')
+    function_usage = function_usage_map(root)
+    lines.append('## JavaScript Functions')
+    lines.append('')
+    if function_entries:
+        for entry in function_entries:
+            name = entry.findtext('value/name') or '?'
+            lines.extend(function_summary_lines(entry, function_usage.get(name, [])))
+            lines.append('')
+    else:
+        lines.append('- No JavaScript functions defined.')
+        lines.append('')
+
+    foreign_groups = foreign_script_summary_lines(root)
+    lines.append('## Foreign Scripts')
+    lines.append('')
+    if foreign_groups:
+        for script_name in sorted(foreign_groups):
+            lines.append('- **%s**' % sanitize(script_name))
+            for module in foreign_groups[script_name]:
+                lines.append('  - Module: %s' % sanitize(module['module_name']))
+                if module['details']:
+                    lines.append('    - Details:')
+                    for detail in module['details']:
+                        lines.append('      - %s' % detail)
+                if module['params']:
+                    lines.append('    - Parameters:')
+                    for param in module['params']:
+                        lines.append('      - %s' % param)
+                if module['returns']:
+                    lines.append('    - Return Values:')
+                    for ret in module['returns']:
+                        lines.append('      - %s' % ret)
+            lines.append('')
+    else:
+        lines.append('- No foreign scripts defined.')
         lines.append('')
     return '\n'.join(lines)
 

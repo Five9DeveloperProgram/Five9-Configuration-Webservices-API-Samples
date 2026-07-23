@@ -38,21 +38,15 @@ The script logs the time taken to pull IVR scripts and the total runtime. If the
 This script renders each Five9 IVR script into a styled SVG call-flow diagram and a Markdown prompt summary. It decodes TTS prompts, maps each module type to a distinct shape/color, lays out the flow, and documents every exit.
 
 The diagram includes:
-- **Exception exits** drawn as their own explicit, labeled red port on any module that defines an exception handler (not just an unlabeled second arrow).
-- An **on-canvas legend** listing the module types actually used in that script.
-- A **title block** with the IVR name and module/transition counts.
-- Shapes/labels for the full module set, including `input`, `systemInfo`, `iterator`, `ivaTransfer`, `systemUpdate`, and `recording`.
 
 The generated SVG can be passed verbatim to Lucidchart via the Lucid connector's `lucid_convert_svg_to_diagram` tool. The script itself does not talk to Lucid — it only produces the artifacts.
 
-Rendering is provided by the reusable `five9.utils.ivr_diagram` module (`ivr_to_svg()` / `ivr_to_text()`), which operates on an IVR's `xmlDefinition` string. Domain capture can emit the same artifacts automatically — see `Five9DomainConfig(generate_ivr_diagrams=True)` in `examples/domain_config`.
+Rendering is provided by the reusable `five9.utils.ivr_diagram` module (`ivr_to_svg()` / `ivr_to_text()`), which operates on an IVR's `xmlDefinition` string. The Markdown summary is focused on script variables, JavaScript functions, and foreign scripts in use. Domain capture can emit the same artifacts automatically — see `Five9DomainConfig(generate_ivr_diagrams=True)` in `examples/domain_config`.
 
 ## Usage
 
 ```sh
 python ivr_generate_diagrams.py --account_alias <alias> [--base-dir <dir>] [--name-pattern <regex>]
-```
-
 ### Arguments
 
 - `--account_alias`: (Optional) Alias for a stored credential object in `private/credentials.py`.
