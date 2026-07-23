@@ -299,6 +299,17 @@ def _build(root):
     """
     nodes, edges = {}, []
     exceptions = {}   # moduleId -> exceptional descendant id
+    function_arg_names = {}
+    for entry in root.findall('functions/entry'):
+        fn_name = entry.findtext('value/name')
+        if not fn_name:
+            continue
+        arg_names = []
+        for arg in entry.findall('value/arguments/arguments'):
+            arg_names.append(sanitize(arg.findtext('name') or '?'))
+        if arg_names:
+            function_arg_names[sanitize(fn_name)] = arg_names
+
     def add_edge(s,d,exc=False):
         if s and d: edges.append((s,d,exc))
 
@@ -354,8 +365,22 @@ def _build(root):
                 for ex in d.findall('expressions'):
                     vn = ex.findtext('variableName')
                     if ex.findtext('isFunction') == 'true':
-                        fn = ex.findtext('.//functionType') or ex.findtext('.//name') or 'FUNC'
-                        args = [operand_str(a) for a in ex.findall('.//arguments')]
+                        fn = sanitize(
+                            ex.findtext('functionType')
+                            or ex.findtext('function/name')
+                            or ex.findtext('name')
+                            or 'FUNC'
+                        )
+                        arg_nodes = ex.findall('arguments/arguments')
+                        if not arg_nodes:
+                            arg_nodes = ex.findall('functionArgs')
+                        args = [operand_str(a) for a in arg_nodes]
+                        names = function_arg_names.get(fn, [])
+                        named_args = []
+                        for idx, value in enumerate(args):
+                            arg_name = names[idx] if idx < len(names) else 'arg%d' % (idx + 1)
+                            named_args.append('%s=%s' % (arg_name, value))
+                        args = named_args
                         body.append('%s = %s(%s)' % (vn, fn, ', '.join(args)))
                     else:
                         c = ex.find('constant')

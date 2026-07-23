@@ -404,6 +404,27 @@ FUNCTION_IVR = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
             </arguments>
           </arguments>
         </expressions>
+        <expressions>
+          <variableName>urlVar</variableName>
+          <isFunction>true</isFunction>
+          <function>
+            <returnType>STRING</returnType>
+            <name>CONCAT</name>
+            <arguments>STRING</arguments>
+            <arguments>STRING</arguments>
+          </function>
+          <functionArgs>
+            <isVarSelected>true</isVarSelected>
+            <variableName>datatable_URL</variableName>
+          </functionArgs>
+          <functionArgs>
+            <isVarSelected>false</isVarSelected>
+            <stringValue>
+              <value>&amp;DNIS=</value>
+              <id>0</id>
+            </stringValue>
+          </functionArgs>
+        </expressions>
       </data>
     </setVariable>
     <hangup>
@@ -524,6 +545,16 @@ class TestIVRDiagram(unittest.TestCase):
         self.assertIn("rawNumber: STRING", doc)
         self.assertIn("defaultCountry: STRING", doc)
         self.assertIn("Used By: SetJsonValue", doc)
+
+        nodes, _ = ivr_diagram.parse_ivr(FUNCTION_IVR)
+        self.assertIn(
+            'resultVar = normalizePhone(rawNumber=rawNumber, defaultCountry="US")',
+            nodes["2"]["body"],
+        )
+        self.assertIn(
+          'urlVar = CONCAT(arg1=datatable_URL, arg2="&DNIS=")',
+          nodes["2"]["body"],
+        )
 
     def test_empty_script_raises(self):
         with self.assertRaises(ValueError):
