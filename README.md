@@ -307,6 +307,47 @@ The available methods as of v13 are:
 	userSkillModify
 	userSkillRemove
 
+## IVR Diagram Documentation
+
+IVR SVG diagrams and Markdown summaries are generated through shared utility helpers in `five9.utils.ivr_diagram`.
+
+### Example Script
+
+Use the sample script in `examples/ivrs`:
+
+	python examples/ivrs/ivr_generate_diagrams.py --account_alias default_account
+	python examples/ivrs/ivr_generate_diagrams.py --account_alias default_account --name-pattern "^Main"
+
+### Utility Entry Points
+
+These reusable helpers can be called directly from your own scripts:
+
+- `capture_domain_ivrs(client, base_dir="private", name_pattern=".*")`
+- `document_ivrs(ivrs, output_dir, name_pattern=".*")`
+- `write_ivr_documentation(xml_definition, output_prefix, name=None)`
+
+Example:
+
+	from five9.utils import ivr_diagram
+	from five9.utils.common import create_five9_client, common_parser_arguments
+
+	args = common_parser_arguments()
+	client = create_five9_client(args)
+	summary = ivr_diagram.capture_domain_ivrs(client, base_dir="private")
+	print(summary)
+
+### Domain Config Capture Integration
+
+`examples/domain_config/domain_config_capture.py` now enables IVR documentation generation during capture by default.
+
+- Default behavior: writes IVR `.json`, `.svg`, and `.md` artifacts.
+- Opt-out flag: `--skip-ivr-documentation`
+
+Example:
+
+	python examples/domain_config/domain_config_capture.py --account_alias default_account
+	python examples/domain_config/domain_config_capture.py --account_alias default_account --skip-ivr-documentation
+
 ---
 
 ## Appendix: Testing & Coverage

@@ -43,10 +43,18 @@ The generated SVG can be passed verbatim to Lucidchart via the Lucid connector's
 
 Rendering is provided by the reusable `five9.utils.ivr_diagram` module (`ivr_to_svg()` / `ivr_to_text()`), which operates on an IVR's `xmlDefinition` string. The Markdown summary is focused on script variables, JavaScript functions, and foreign scripts in use. Domain capture can emit the same artifacts automatically — see `Five9DomainConfig(generate_ivr_diagrams=True)` in `examples/domain_config`.
 
+High-level utility entry points:
+
+- `capture_domain_ivrs(client, base_dir="private", name_pattern=".*")`
+- `document_ivrs(ivrs, output_dir, name_pattern=".*")`
+- `write_ivr_documentation(xml_definition, output_prefix, name=None)`
+
 ## Usage
 
 ```sh
 python ivr_generate_diagrams.py --account_alias <alias> [--base-dir <dir>] [--name-pattern <regex>]
+```
+
 ### Arguments
 
 - `--account_alias`: (Optional) Alias for a stored credential object in `private/credentials.py`.
@@ -69,6 +77,16 @@ Files are written to `<base-dir>/<Five9 domain name>/ivr-documentation/<timestam
 - `<name>.md`: per-module decoded prompts, branch transitions, and a Script Variables inventory (diff-friendly documentation).
 
 The timestamped folder uses the current run time, so repeated exports do not overwrite previous diagrams.
+
+## Domain Capture Integration
+
+`examples/domain_config/domain_config_capture.py` now generates IVR SVG/Markdown documentation during domain capture by default.
+
+To skip that behavior on a capture run:
+
+```sh
+python examples/domain_config/domain_config_capture.py --account_alias default_account --skip-ivr-documentation
+```
 
 ## Credit
 

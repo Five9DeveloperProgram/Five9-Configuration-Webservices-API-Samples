@@ -39,6 +39,12 @@ if __name__ == "__main__":
         help="Five9 host alias (us, ca, eu, frk, in)",
     )
 
+    parser.add_argument(
+        "--skip-ivr-documentation",
+        action="store_true",
+        help="Skip generating IVR diagram/documentation files during capture",
+    )
+
     args = parser.parse_args()
 
     password = args.password
@@ -51,6 +57,7 @@ if __name__ == "__main__":
         password=password,
         account=args.account_alias,
         api_hostname_alias=args.hostalias,
+        generate_ivr_diagrams=not args.skip_ivr_documentation,
     )
 
     domain.get_domain_objects()

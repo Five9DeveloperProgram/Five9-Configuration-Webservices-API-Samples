@@ -243,10 +243,11 @@ class Five9DomainConfig:
         if not xml_definition:
             return
         try:
-            with open(f"{target_path}.svg", "w") as svg_file:
-                svg_file.write(ivr_diagram.ivr_to_svg(xml_definition, name=ivr_name))
-            with open(f"{target_path}.md", "w") as md_file:
-                md_file.write(ivr_diagram.ivr_to_text(xml_definition, name=ivr_name))
+            ivr_diagram.write_ivr_documentation(
+                xml_definition,
+                target_path,
+                name=ivr_name,
+            )
             print(f"\t\t\tdiagram + docs: {ivr_name}")
         except Exception as e:
             print(f"\t\t\tskipped diagram for {ivr_name}: {e}")

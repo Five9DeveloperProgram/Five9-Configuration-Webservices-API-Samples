@@ -42,6 +42,7 @@ CLI (backward compatible with the original):
 import sys, os, re, base64, gzip, html, json
 import xml.etree.ElementTree as ET
 from collections import defaultdict
+from datetime import datetime
 
 # ---------------- shape/color mapping ----------------
 # kind: rect | round | diamond | hexagon | ellipse | circle | parallelogram |
@@ -174,6 +175,8 @@ def function_usage_map(root):
             continue
         for module in container:
             module_name = module.findtext('moduleName') or module.findtext('moduleId') or module.tag
+            # Function calls are modeled on setVariable expressions; other
+            # module types do not expose callable expressions in this schema.
             if module.tag != 'setVariable':
                 continue
             for ex in module.findall('data/expressions'):
@@ -299,6 +302,8 @@ def _build(root):
     """
     nodes, edges = {}, []
     exceptions = {}   # moduleId -> exceptional descendant id
+    # Build a signature map for custom JS functions so setVariable calls can
+    # show readable named arguments when the IVR defines them.
     function_arg_names = {}
     for entry in root.findall('functions/entry'):
         fn_name = entry.findtext('value/name')
@@ -365,6 +370,9 @@ def _build(root):
                 for ex in d.findall('expressions'):
                     vn = ex.findtext('variableName')
                     if ex.findtext('isFunction') == 'true':
+                        # Function metadata varies by export shape:
+                        # - custom/legacy: functionType + arguments/arguments
+                        # - system/newer: function/name + functionArgs
                         fn = sanitize(
                             ex.findtext('functionType')
                             or ex.findtext('function/name')
@@ -376,6 +384,8 @@ def _build(root):
                             arg_nodes = ex.findall('functionArgs')
                         args = [operand_str(a) for a in arg_nodes]
                         names = function_arg_names.get(fn, [])
+                        # For system functions without exposed arg names,
+                        # fall back to arg1/arg2... but still show real values.
                         named_args = []
                         for idx, value in enumerate(args):
                             arg_name = names[idx] if idx < len(names) else 'arg%d' % (idx + 1)
@@ -951,6 +961,8 @@ def ivr_to_text(xml_definition, name=None):
     lines.append('%d modules, %d transitions' % (len(modules), transition_count))
     lines.append('')
 
+    # Script variable inventory is intentionally table-form for easy scanning
+    # and diffing between exports.
     user_vars = root.findall('userVariables/entry')
     lines.append('## Script Variables')
     lines.append('')
@@ -964,6 +976,7 @@ def ivr_to_text(xml_definition, name=None):
         lines.append('- No script variables defined.')
         lines.append('')
 
+    # Functions section summarizes what is defined plus where each one is used.
     function_entries = root.findall('functions/entry')
     function_usage = function_usage_map(root)
     lines.append('## JavaScript Functions')
@@ -977,6 +990,7 @@ def ivr_to_text(xml_definition, name=None):
         lines.append('- No JavaScript functions defined.')
         lines.append('')
 
+    # Foreign scripts are grouped by child script name to make reuse visible.
     foreign_groups = foreign_script_summary_lines(root)
     lines.append('## Foreign Scripts')
     lines.append('')
@@ -1012,6 +1026,81 @@ def _read_source(path):
     if stripped.startswith('{'):
         return json.loads(raw)['xmlDefinition']
     return raw
+
+
+def write_ivr_documentation(xml_definition, output_prefix, name=None):
+    """Write SVG and Markdown IVR artifacts to disk.
+
+    Args:
+        xml_definition: IVR xmlDefinition payload.
+        output_prefix: Destination path without extension.
+        name: Optional IVR name used in diagram/document title blocks.
+
+    Returns:
+        Tuple of written file paths: (svg_path, markdown_path).
+    """
+    output_dir = os.path.dirname(output_prefix)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+    svg_path = '%s.svg' % output_prefix
+    md_path = '%s.md' % output_prefix
+    with open(svg_path, 'w') as svg_file:
+        svg_file.write(ivr_to_svg(xml_definition, name=name))
+    with open(md_path, 'w') as md_file:
+        md_file.write(ivr_to_text(xml_definition, name=name))
+    return svg_path, md_path
+
+
+def document_ivrs(ivrs, output_dir, name_pattern='.*'):
+    """Generate IVR documentation artifacts for iterable IVR objects.
+
+    The input objects are expected to expose ``name`` and ``xmlDefinition``.
+
+    Returns:
+        dict: summary with ``generated``, ``skipped`` and ``output_dir``.
+    """
+    name_regex = re.compile(name_pattern)
+    os.makedirs(output_dir, exist_ok=True)
+
+    generated, skipped = 0, 0
+    for ivr in ivrs:
+        ivr_name = getattr(ivr, 'name', None)
+        xml_definition = getattr(ivr, 'xmlDefinition', None)
+        if not ivr_name or not xml_definition:
+            skipped += 1
+            continue
+        if not name_regex.search(ivr_name):
+            continue
+        output_prefix = os.path.join(output_dir, ivr_name)
+        write_ivr_documentation(xml_definition, output_prefix, name=ivr_name)
+        generated += 1
+
+    return {
+        'generated': generated,
+        'skipped': skipped,
+        'output_dir': output_dir,
+    }
+
+
+def capture_domain_ivrs(client, base_dir='private', name_pattern='.*'):
+    """Fetch IVRs from a Five9 client and generate diagrams/docs on disk.
+
+    Output structure:
+        <base_dir>/<domain_name>/ivr-documentation/<timestamp>/
+
+    Returns:
+        dict: summary with ``domain_name``, ``retrieved``, ``generated``,
+        ``skipped`` and ``output_dir``.
+    """
+    domain_name = client.service.getVCCConfiguration().domainName
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    output_dir = os.path.join(base_dir, domain_name, 'ivr-documentation', timestamp)
+
+    ivrs = client.service.getIVRScripts()
+    summary = document_ivrs(ivrs, output_dir, name_pattern=name_pattern)
+    summary['domain_name'] = domain_name
+    summary['retrieved'] = len(ivrs)
+    return summary
 
 def main():
     src, out = sys.argv[1], sys.argv[2]
