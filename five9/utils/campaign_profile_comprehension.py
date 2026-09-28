@@ -1,5 +1,190 @@
 import re
 
+# Grouping expressions reference criteria by 1-based ordinal position only;
+# campaignFilterCriterion carries no id, so position is the sole identity.
+CRITERION_INDEX_PATTERN = re.compile(r"\d+")
+DEMYSTIFIED_CONDITION_PATTERN = re.compile(
+    r"\[([^\[\]\r\n]*?::[^\[\]\r\n]*?::[^\[\]\r\n]*?)\]" r"(?:--)?(?:\[\d+\])?"
+)
+GROUPING_TOKEN_PATTERN = re.compile(r"AND|OR|NOT|\d+|\(|\)")
+
+
+def validate_grouping_tokens(tokens, criterion_count):
+    """Validate a tokenized custom grouping expression."""
+    position = 0
+
+    def current_token():
+        return tokens[position] if position < len(tokens) else None
+
+    def parse_primary():
+        nonlocal position
+        token = current_token()
+        if token and token.isdigit():
+            criterion_index = int(token)
+            if not 1 <= criterion_index <= criterion_count:
+                raise ValueError(
+                    f"grouping references criterion {criterion_index}, but only "
+                    f"{criterion_count} criteria exist"
+                )
+            position += 1
+            return
+        if token == "(":
+            position += 1
+            parse_or_expression()
+            if current_token() != ")":
+                raise ValueError("grouping expression has an unclosed parenthesis")
+            position += 1
+            return
+        raise ValueError(
+            f"grouping expression expected a criterion or '(', got {token!r}"
+        )
+
+    def parse_not_expression():
+        nonlocal position
+        if current_token() == "NOT":
+            position += 1
+            parse_not_expression()
+            return
+        parse_primary()
+
+    def parse_and_expression():
+        nonlocal position
+        parse_not_expression()
+        while current_token() == "AND":
+            position += 1
+            parse_not_expression()
+
+    def parse_or_expression():
+        nonlocal position
+        parse_and_expression()
+        while current_token() == "OR":
+            position += 1
+            parse_and_expression()
+
+    if not tokens:
+        raise ValueError("grouping expression is empty")
+    parse_or_expression()
+    if position != len(tokens):
+        raise ValueError(
+            f"grouping expression has an orphaned token {tokens[position]!r}"
+        )
+
+
+def criterion_key(criterion):
+    """Identity of a criterion as the Admin UI sees it: the comparison triple."""
+    return (
+        criterion["leftValue"],
+        criterion["compareOperator"],
+        criterion["rightValue"],
+    )
+
+
+def find_duplicate_criteria(profile_filter):
+    """
+    Locates criteria rows that repeat an earlier row's comparison triple.
+
+    Returns a list of dicts, one per duplicated triple, each with the criterion
+    key, the 1-based index kept (first occurrence), and the indexes to drop.
+    """
+    positions = {}
+    for index, criterion in enumerate(profile_filter.get("crmCriteria") or [], 1):
+        positions.setdefault(criterion_key(criterion), []).append(index)
+
+    return [
+        {"key": key, "keep": found[0], "drop": found[1:]}
+        for key, found in positions.items()
+        if len(found) > 1
+    ]
+
+
+def canonical_expression(expression, crm_criteria):
+    """
+    Rewrites a grouping expression so each index token names the *condition* it
+    points at rather than its ordinal slot.
+
+    Two expressions with identical canonical forms are logically equivalent
+    regardless of how their rows are numbered, which makes this an exact
+    equivalence proof rather than a sampled one.
+    """
+    condition_ids = {}
+    for criterion in crm_criteria:
+        condition_ids.setdefault(criterion_key(criterion), len(condition_ids) + 1)
+    index_to_id = {
+        index: condition_ids[criterion_key(criterion)]
+        for index, criterion in enumerate(crm_criteria, 1)
+    }
+    return CRITERION_INDEX_PATTERN.sub(
+        lambda match: f"C{index_to_id[int(match.group())]}", expression
+    )
+
+
+def renumber_expression(expression, index_map):
+    """
+    Applies an old-index -> new-index mapping to a grouping expression.
+
+    Substitutes whole number tokens in a single pass; replacing digits
+    individually would corrupt multi-digit indexes (remapping 4->3 would
+    otherwise rewrite 14 as 13).
+    """
+    return CRITERION_INDEX_PATTERN.sub(
+        lambda match: str(index_map[int(match.group())]), expression
+    )
+
+
+def repair_duplicate_criteria(profile_filter):
+    """
+    Removes duplicate criteria rows and renumbers the grouping expression to match.
+
+    Duplicate rows were once accepted by the API but are now silently collapsed by
+    the Admin UI, which leaves the grouping expression referencing more rows than
+    the UI recognizes and makes the filter unsavable. This keeps the first
+    occurrence of each triple, points every reference at it, and shifts the
+    surviving rows down to close the gaps.
+
+    Returns a dict describing the repair. "equivalent" is an exact proof that the
+    rewritten filter selects the same contacts; callers must refuse to push when
+    it is False.
+    """
+    crm_criteria = profile_filter.get("crmCriteria") or []
+    grouping = profile_filter.get("grouping") or {}
+    expression = grouping.get("expression") or ""
+
+    duplicates = find_duplicate_criteria(profile_filter)
+    if not duplicates:
+        return {"changed": False, "duplicates": []}
+
+    kept = []
+    first_seen = {}
+    index_map = {}
+    for index, criterion in enumerate(crm_criteria, 1):
+        key = criterion_key(criterion)
+        if key in first_seen:
+            index_map[index] = first_seen[key]
+        else:
+            kept.append(criterion)
+            first_seen[key] = len(kept)
+            index_map[index] = len(kept)
+
+    new_expression = renumber_expression(expression, index_map)
+
+    return {
+        "changed": True,
+        "duplicates": duplicates,
+        "index_map": index_map,
+        "renumbered": {old: new for old, new in index_map.items() if old != new},
+        "rows_before": len(crm_criteria),
+        "rows_after": len(kept),
+        "original_expression": expression,
+        "crmCriteria": kept,
+        "grouping": {
+            "expression": new_expression,
+            "type": grouping.get("type", "Custom"),
+        },
+        "orderByFields": profile_filter.get("orderByFields") or [],
+        "equivalent": canonical_expression(expression, crm_criteria)
+        == canonical_expression(new_expression, kept),
+    }
+
 
 def prettify(ugly="", open_set="{[(<", close_set="}])>"):
     """
@@ -138,7 +323,7 @@ def remystify_filter_in_place(nice_filter):
     return nice_filter
 
 
-def remystify_filter(nice_filter):
+def remystify_filter(nice_filter, verbose=False):
     """
     Converts a "nice filter" string into a format that can be used by the Five9 Configuration Webservices API.
 
@@ -148,89 +333,74 @@ def remystify_filter(nice_filter):
     Returns:
         dict: A dictionary that contains the converted filter criteria, grouping expression, and order by fields.
     """
-    # Remove all bracketed numbers from the nice filter string
-    nice_filter = re.sub(r"(\[([0-9]*)\])", "", nice_filter)
+    criterion_indexes = {}
+    crm_criteria = []
 
-    # Compile a regular expression to match strings enclosed in brackets
-    condition_pattern = re.compile(r"\[(.*?)\]")
+    def replace_condition(match):
+        condition = match.group(1)
+        parts = [part.strip() for part in condition.split("::", 2)]
+        if len(parts) != 3 or not parts[0] or not parts[1]:
+            raise ValueError(f"invalid filter condition: [{condition}]")
 
-    # Find all occurrences of the condition pattern in the nice filter string
-    conditions = condition_pattern.finditer(nice_filter)
+        left_value, compare_operator, right_value = parts
+        criterion_key = (left_value, compare_operator, right_value)
+        if criterion_key not in criterion_indexes:
+            criterion_indexes[criterion_key] = len(crm_criteria) + 1
+            crm_criteria.append(
+                {
+                    "compareOperator": compare_operator,
+                    "leftValue": left_value,
+                    "rightValue": "" if right_value == "null" else right_value,
+                }
+            )
+        return str(criterion_indexes[criterion_key])
 
-    # Initialize a list to store unique conditions and an empty list for the crmCriteria
-    unique_conditions = []
-    crmCriteria = []
-
-    # Set the new grouping expression to the nice filter string
-    new_grouping_expression = nice_filter
-
-    # Iterate through the found conditions
-    for c in conditions:
-        # Get the start and end indices of the condition string
-        b = c.span()[0]
-        e = c.span()[1]
-
-        # Get the condition string
-        cond = nice_filter[b:e]
-
-        # Get the unique condition by taking the portion of the string before the closing bracket
-        unique_condition = cond.split("]")[0][1:]
-
-        # If the unique condition has not yet been added to the list, add it
-        if unique_condition not in unique_conditions:
-            unique_conditions.append(unique_condition)
-
-    # Iterate through the unique conditions
-    for unique_condition in unique_conditions:
-        # Split the condition string on the "::" separator
-        criteria = unique_condition.split("::")
-
-        # Get the compare operator, left value, and right value from the criteria
-        compareOperator = criteria[1]
-        leftValue = criteria[0][:-1]
-        rightValue = criteria[2][1:]
-
-        # If the right value is "null", set it to None
-        if rightValue == "null":
-            rightValue = None
-
-        # Add a new crmCriteria object to the list
-        crmCriteria.append(
-            {
-                "compareOperator": compareOperator,
-                "leftValue": leftValue,
-                "rightValue": rightValue,
-            }
-        )
-
-    # Replace all occurrences of the unique conditions in the new grouping expression with the index of the condition
-    for idx, condition in enumerate(unique_conditions):
-        new_grouping_expression = re.sub(condition, f"{idx+1}", new_grouping_expression)
-
-    # Remove brackets and newlines from the new grouping expression, and trim leading/trailing whitespace
-    new_grouping_expression = (
-        new_grouping_expression.replace("[", "")
-        .replace("]", "")
-        .replace("\n", " ")
-        .replace("\t", " ")
-        .strip()
+    new_grouping_expression, condition_count = DEMYSTIFIED_CONDITION_PATTERN.subn(
+        replace_condition, nice_filter
     )
+    if condition_count == 0:
+        raise ValueError("filter does not contain any demystified conditions")
 
-    # Remove any double spaces from the new grouping expression
-    while new_grouping_expression.find("  ") > -1:
-        new_grouping_expression = new_grouping_expression.replace("  ", " ")
+    grouping_tokens = []
+    position = 0
+    while position < len(new_grouping_expression):
+        if new_grouping_expression[position].isspace():
+            position += 1
+            continue
+        token_match = GROUPING_TOKEN_PATTERN.match(new_grouping_expression, position)
+        if not token_match:
+            unsupported_text = new_grouping_expression[position : position + 40]
+            raise ValueError(
+                "filter contains unsupported text outside its conditions near: "
+                f"{unsupported_text}"
+            )
+        grouping_tokens.append(token_match.group())
+        position = token_match.end()
 
-    # Print the index and value of each unique condition
-    for idx, condition in enumerate(unique_conditions):
-        print(f"{idx+1:02} {condition}")
+    depth = 0
+    for token in grouping_tokens:
+        if token == "(":
+            depth += 1
+        elif token == ")":
+            depth -= 1
+            if depth < 0:
+                break
+    if depth != 0:
+        raise ValueError("filter grouping expression has unbalanced parentheses")
 
-    # for idx, condition in enumerate(crmCriteria):
-    #     print(f'{idx+1:02} {condition}')
+    validate_grouping_tokens(grouping_tokens, len(crm_criteria))
 
-    print(new_grouping_expression)
+    new_grouping_expression = " ".join(grouping_tokens)
+    new_grouping_expression = new_grouping_expression.replace("( ", "(")
+    new_grouping_expression = new_grouping_expression.replace(" )", ")")
+
+    if verbose:
+        for criterion, index in criterion_indexes.items():
+            print(f"{index:02} {' ::'.join(criterion)}")
+        print(new_grouping_expression)
 
     return {
-        "crmCriteria": crmCriteria,
+        "crmCriteria": crm_criteria,
         "grouping": {"expression": new_grouping_expression, "type": "Custom"},
         "orderByFields": [],
     }

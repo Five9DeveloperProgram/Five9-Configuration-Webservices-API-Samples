@@ -15,6 +15,15 @@ Under the MIT License:
 
 For production-ready tailored implementations, we strongly recommend working with Five9’s Professional Services and Technical Account Management teams.
 
+## Before deleting domain objects
+
+Five9 configuration objects can be referenced by campaigns, campaign profiles,
+IVRs, prompts, skills, users, lists, dispositions, and other objects. Read
+[Five9 Object Dependencies and Safe Deletion](OBJECT_DEPENDENCIES.md) before
+deleting or renaming an object. It explains what to inspect, where the current
+domain snapshots have coverage gaps, and how to prepare a reversible deletion
+plan.
+
 # Obtaining the repository
 
 It is highly recommended that you install [git](https://git-scm.com/download/win) so that you can update to the latest version of this repository as needed.  Once installed, from the command line you can clone this repository with
