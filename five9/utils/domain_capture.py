@@ -5,6 +5,7 @@ import shutil
 import time
 
 from git import Repo
+from git.exc import InvalidGitRepositoryError
 import zeep
 
 from five9 import five9_session
@@ -109,43 +110,36 @@ class Five9DomainConfig:
 
         self.vccConfig = self.client.service.getVCCConfiguration()
 
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-
-        # Use current working directory instead of hardcoded path
-        current_working_directory = os.getcwd()
-
+        # One stable folder per domain so the git history accumulates across
+        # captures and `git diff` / `git log` show what changed between runs.
+        # (Use the current working directory, not the package location.)
         self.domain_path = os.path.join(
-            current_working_directory,  # Change from os.path.dirname(__file__)
-            "domain_snapshots",
+            os.getcwd(),
+            REPO_PATH,
             f"{self.vccConfig.domainName}",
-            "ivr-documentation",
-            timestamp,
         )
 
-        # delete the contents of the domain snapshot folder if it exists, except for the .git folder
         if os.path.exists(self.domain_path):
             print(
-                f"\nDeleting existing snapshot data for {self.vccConfig.domainName}:\n{self.domain_path}\n"
+                f"\nClearing previous snapshot files (keeping .git) for {self.vccConfig.domainName}:\n{self.domain_path}\n"
             )
-
-            # for each file in the root directory, delete it unless the parent directory is .git
+            # Remove old files so objects deleted in the domain show up as
+            # deletions in git. The .git folder (history) is never touched.
             for name in os.listdir(self.domain_path):
-                if name != ".gitignore" and name != ".git":
-                    # if the file is a directory, delete the directory
-                    if os.path.isdir(os.path.join(self.domain_path, name)):
-                        shutil.rmtree(os.path.join(self.domain_path, name))
-                    else:
-                        # remove the file
-                        os.remove(os.path.join(self.domain_path, name))
-
+                if name in (".git", ".gitignore"):
+                    continue
+                path = os.path.join(self.domain_path, name)
+                if os.path.isdir(path):
+                    shutil.rmtree(path)
+                else:
+                    os.remove(path)
         else:
             os.makedirs(self.domain_path, exist_ok=True)
 
         try:
             self.repo = Repo(self.domain_path)
             print(f"Found existing repo at {self.domain_path}")
-        except Exception as e:
-            print(f"Error: {e}")
+        except InvalidGitRepositoryError:
             self.repo = Repo.init(self.domain_path)
             # set the "longpaths=true" option for the repo (required for Windows
             # to support long names of objects and the filenames created)
@@ -156,8 +150,6 @@ class Five9DomainConfig:
 
         print(f"\nDomain snapshot initialized for:\n{self.vccConfig.domainName}\n")
 
-
-        # TODO - Add logic to check if repo exists and if so, pull latest, else create new repo
 
     def write_object_to_target_path(
         self,
