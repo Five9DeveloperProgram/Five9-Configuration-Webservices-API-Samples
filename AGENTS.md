@@ -278,10 +278,10 @@ print(client.latest_envelopes)          # Both
 ### Working with IVR Scripts
 - Get IVRs: `client.service.getIVRScripts(scriptNamePattern='.*')`
 - Parse functions: `ivr_utils.extract_jsfunctions_from_ivr(ivr.xmlDefinition)`
+  - when analyzing differences between functions of the same name across scripts, ask if the user would like to see a "diff" comparing them.  If they do not know what a diff is, explain it in lightly technical terms.
 - Analyze variables: `ivr_utils.ivr_variable_usage(ivrs, verbose=True)`
 - Generate a diagram: `ivr_diagram.ivr_to_svg(ivr.xmlDefinition)` or run
   `examples/ivrs/ivr_generate_diagrams.py`
-- Decompress function bodies from base64/zlib/gzip encoding
 
 ### Bulk User Operations
 - Template pattern: Get a template user with `getUserInfo()`, copy roles/skills
