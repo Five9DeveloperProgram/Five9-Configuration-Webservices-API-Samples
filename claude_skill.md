@@ -39,15 +39,40 @@ Repo: https://github.com/Five9DeveloperProgram/Five9-Configuration-Webservices-A
 
 ## Part 1: Environment setup
 
-Complete Step 0 first. Detect the user's OS (ask if unclear). Every command in this part is for the user to run in their own terminal (PowerShell on Windows, Terminal on macOS), one at a time. Ask them to paste the output so you can confirm it worked. Check what is already installed before telling them to install anything.
+Complete Step 0 first. Detect the user's OS (ask if unclear). Every command in this part is for the user to run in their own terminal (**PowerShell 7 on Windows**, Terminal on macOS), one at a time. Ask them to paste the output so you can confirm it worked. Check what is already installed before telling them to install anything.
+
+### Windows: use PowerShell 7, not PowerShell ISE
+
+**Do not run this library or its scripts in Windows PowerShell ISE.** The library does not work well there, especially when interactive terminal input is needed. ISE is a legacy editor tied to Windows PowerShell 5.1; installing PowerShell 7 does not upgrade ISE. Use a separate PowerShell 7 terminal for all setup and script execution.
+
+Do not assume the user knows which app they have open. Guide them through these checks one at a time, waiting for each result:
+
+1. **Identify the current shell.** If the window title says "Windows PowerShell ISE", they are in ISE. If unsure, have them run these harmless checks in their current PowerShell command pane:
+   ```powershell
+   $Host.Name
+   $PSVersionTable.PSVersion
+   ```
+   `Windows PowerShell ISE Host` means ISE. A version whose `Major` is `5` means legacy Windows PowerShell, even if it is not ISE. For this guide, use PowerShell 7 (`Major` is `7`) in a non-ISE terminal. Windows Terminal and VS Code can host different shells; their window titles alone do not prove PowerShell 7 is running.
+2. **Open PowerShell 7 if already installed.** Search the Windows Start menu for **PowerShell 7** and open it, not "Windows PowerShell" or "Windows PowerShell ISE". Alternatively, press **Win+R**, enter `pwsh`, and press Enter to launch it separately. Do not try to run `pwsh` inside ISE's command pane.
+3. **Install PowerShell 7 only if it is missing.** Open ordinary **Windows PowerShell** from Start (not ISE) for this installation step only, and run:
+   ```powershell
+   winget install --id Microsoft.PowerShell --source winget
+   ```
+   If `winget` is unavailable, guide them through the stable Windows installer appropriate for their machine using [Microsoft's PowerShell installation instructions](https://learn.microsoft.com/en-us/powershell/scripting/install/install-powershell-on-windows). If company policy or administrator approval blocks installation, ask them to contact IT rather than bypassing the restriction. PowerShell 7 installs alongside Windows PowerShell; they do not need to remove the old version.
+4. **Verify the new terminal before continuing.** Open PowerShell 7 from Start or by entering `pwsh` in **Win+R**, then repeat both checks from step 1 there. Confirm `Major` is `7` and the host is not ISE. In Windows Terminal, select the **PowerShell 7** profile from the tab dropdown if available, then verify; an existing "Windows PowerShell" tab stays on the old version.
+5. **Keep using that terminal.** Run the remaining setup and Python scripts in PowerShell 7, not ISE's Run button. When opening a new terminal or switching from ISE, navigate back to the repository with `cd` and reactivate the virtual environment if it already exists, using the path chosen during setup. Do not assume the new terminal retains the old terminal's working directory or activated environment.
+
+If a Windows user later reports a stuck prompt, missing password input, or unusual terminal behavior, recheck the host and version before changing Python code. A password prompt normally shows no characters as they type; that alone is not a failure. Never ask them to paste their password.
+
+### Install and configure the Python environment
 
 1. **Check for Python and git.**
-   - Windows: `python --version` and `git --version` in PowerShell. If `python` opens the Microsoft Store, Python is not installed.
+   - Windows: `python --version` and `git --version` in the verified PowerShell 7 terminal. If `python` opens the Microsoft Store, Python is not installed.
    - macOS: `python3 --version` and `git --version` in Terminal. macOS may prompt to install Xcode command line tools for git; that is fine.
 2. **Install what is missing.**
    - Python: current stable 3.x from https://www.python.org/downloads/. On Windows, tell them to tick "Add python.exe to PATH" in the installer. On macOS, the python.org installer or `brew install python` both work.
    - git: Windows from https://git-scm.com/download/win (defaults are fine). macOS via `xcode-select --install` or `brew install git`.
-   - Ask them to open a new terminal afterward, since PATH changes only apply to new sessions.
+   - Ask them to open a new terminal afterward (PowerShell 7 on Windows, not ISE), since PATH changes only apply to new sessions.
 3. **Clone the repo** into the shared folder from Step 0. Have the user `cd` into it first, since Claude cannot clone to their machine. Once cloned, Claude can read the README and code through the shared folder.
    `git clone https://github.com/Five9DeveloperProgram/Five9-Configuration-Webservices-API-Samples.git`
    If git is a blocker, the repo's "Download ZIP" option works too.

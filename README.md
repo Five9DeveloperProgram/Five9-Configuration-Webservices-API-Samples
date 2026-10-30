@@ -2,6 +2,10 @@
 
 The purpose of this repository is to provide individually functional scripts to demonstrate how to use Five9 Configuration Webservices API methods in Python.  Forked from [Andrew Willey](https://github.com/andrewawilley)
 
+Want ideas for what to build? See [What can you build with this library?](USE_CASES.md)
+for a curated guide to the examples and utilities, from domain documentation
+and user administration to configuration migration, contacts, and reporting.
+
 # DISCLAIMER
 
 This repository contains sample code which is **not an official Five9 resource**. It is intended solely for educational and illustrative purposes to demonstrate possible ways to interact with Five9 APIs.
