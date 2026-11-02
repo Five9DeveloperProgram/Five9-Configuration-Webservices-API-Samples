@@ -187,9 +187,12 @@ if __name__ == "__main__":
 
 ### Working with Five9Client
 - **Initialization**: `Five9Client(five9username=..., five9password=..., account=..., api_hostname_alias=...)`
-- **API Calls**: Access via `client.service.methodName(args)`
-- **Throttled Calls**: Use `client.throttled_service` for automatic rate
-  limiting instead of calling `client.service` directly in loops
+- **API Calls**: Use `client.service.methodName(args)` for isolated, one-off
+  calls only. For bulk or high-repeat calls, use
+  `client.throttled_service.methodName(args)` instead.
+- **Throttled Calls**: `Five9Client` creates `client.throttled_service`
+  automatically. It delegates to the same SOAP service, pausing 300ms before
+  each method call; no separate proxy setup is needed.
 - **Rate Limiting**: Check `client.current_api_useage_formatted` for current
   usage; raw counters via `client.service.getCallCountersState()`
 - **SOAP Inspection**: Use `client.latest_envelopes` (or
@@ -199,13 +202,28 @@ if __name__ == "__main__":
   issues
 
 ### API Rate Limits & Best Practices
-- Default throttle: 300ms between calls (`ThrottledServiceProxy`) — this exists
-  because Five9 enforces per-domain API rate limits; removing or shortening the
-  delay risks the domain getting throttled or the account getting locked out
-- Monitor usage: `client.service.getCallCountersState()`
+- **Required for repeated calls**: Use `client.throttled_service` whenever
+  iterating over objects or repeatedly calling API methods, whether reading,
+  creating, updating, deleting, or polling. This applies to loops, nested
+  loops, bulk scripts, and repeated calls from helpers; do not use
+  `client.service` just because the method is read-only or asynchronous.
+  For example:
+  ```python
+  for name in names:
+      user = client.throttled_service.getUserInfo(name)
+  ```
+  See `examples/domain_config/push_campaigns.py` for an existing bulk-call
+  pattern.
+- Default throttle: 300ms before each proxied call (`ThrottledServiceProxy`).
+  It reduces the chance of hitting Five9's per-domain API rate limits, but
+  does not guarantee that a long-running or concurrent workload stays within
+  the limit; monitor usage and slow down further if needed.
+- Monitor usage: `client.service.getCallCountersState()` for a one-off check;
+  use `client.throttled_service.getCallCountersState()` if checking repeatedly
 - Bulk operations: Use async methods when available (`asyncAddRecordsToList`,
   `asyncUpdateCrmRecords`, `asyncDeleteRecordsFromList`,
-  `asyncUpdateCampaignDispositions`)
+  `asyncUpdateCampaignDispositions`); invoke them through
+  `client.throttled_service` when issuing repeated requests.
 - Batch processing: Use `tqdm` for progress tracking and user feedback
 
 ### Testing Approach
@@ -412,12 +430,14 @@ mistakes can affect live agents, campaigns, and customer data.
    - Recommend testing against a sandbox/trial domain rather than a production
      one whenever the user's intent allows it.
 
-3. **Don't bypass the built-in rate limiting.** `ThrottledServiceProxy` (0.3s
-   default delay) exists to keep bulk operations within Five9's per-domain API
-   rate limits. Don't remove it, monkey-patch around it, or write raw
-   `client.service` loops that skip `client.throttled_service` for
-   high-volume operations, unless the user explicitly asks and understands the
-   risk of tripping rate limits or having the account throttled/locked.
+3. **Use the built-in proxy for every bulk/high-repeat API sequence.** Route
+   each repeated SOAP call through `client.throttled_service`, including reads,
+   writes, async submissions, and status polling, even when calls are spread
+   across helpers. `client.service` is for isolated one-off calls, not loops.
+   The proxy sleeps 0.3s before each call; don't remove it, monkey-patch
+   around it, or shorten its delay to work around rate limits. If the user
+   explicitly requests bypassing or shortening it, explain the risk of
+   throttling or account lockout and get their informed confirmation first.
 
 4. **Escalate production deployment requests.** If a user's request implies
    deploying this sample code (or a derivative of it) as part of a production
