@@ -1,17 +1,15 @@
-"""Upload the modified DeVry IVR snapshots to another domain as AOMT copies.
+"""Upload IVR JSON snapshots to a destination domain.
 
-The source set is discovered by finding ``* - Original Recipe.json`` and then
-loading each corresponding JSON file without that suffix. The script is a
-local-only dry run unless ``--apply`` is supplied.
+Preview local snapshots without connecting to Five9:
+    python examples/ivrs/upload_ivr_snapshots.py --source-dir private/ivr_exports
 
-Dry run:
-    python examples/ivrs/upload_aomt_ivrs.py
+Create renamed copies after confirming the destination domain:
+    python examples/ivrs/upload_ivr_snapshots.py --source-dir private/ivr_exports \
+        --target-suffix " - Copy" --apply
 
-Apply to a destination domain:
-    python examples/ivrs/upload_aomt_ivrs.py --apply
-
-The live command prompts for credentials securely, displays the detected
-destination domain, and requires its exact name before making changes.
+Each JSON file must contain a name matching its filename and an xmlDefinition.
+Only references to other selected IVRs are renamed. Other domain dependencies
+must already exist and be reviewed separately before applying the upload.
 """
 
 import json
@@ -22,32 +20,21 @@ import xml.etree.ElementTree as ET
 from five9.utils.common import common_parser_arguments, create_five9_client
 
 
-ORIGINAL_SUFFIX = " - Original Recipe"
-TARGET_SUFFIX = " - AOMT"
-SOURCE_DIR = (
-    Path(__file__).resolve().parents[2]
-    / "domain_snapshots"
-    / "DeVry University - Developer Program-"
-    / "ivrs"
-)
-
-
-def load_migration_set(source_dir=SOURCE_DIR):
+def load_migration_set(source_dir, file_pattern="*.json"):
     """Return validated snapshot dictionaries keyed by their source names."""
+    source_dir = Path(source_dir)
     migration_set = {}
-    original_paths = sorted(source_dir.glob(f"*{ORIGINAL_SUFFIX}.json"))
-    if not original_paths:
-        raise ValueError(f"No Original Recipe snapshots found in {source_dir}")
+    source_paths = sorted(source_dir.glob(file_pattern))
+    if not source_paths:
+        raise ValueError(f"No snapshots matching {file_pattern!r} in {source_dir}")
 
-    for original_path in original_paths:
-        source_name = original_path.stem[: -len(ORIGINAL_SUFFIX)]
-        source_path = source_dir / f"{source_name}.json"
-        if not source_path.is_file():
-            raise ValueError(f"Missing modified counterpart: {source_path}")
-
+    for source_path in source_paths:
+        source_name = source_path.stem
         with source_path.open(encoding="utf-8") as snapshot_file:
             snapshot = json.load(snapshot_file)
 
+        if not isinstance(snapshot, dict):
+            raise ValueError(f"Snapshot must be a JSON object: {source_path}")
         if snapshot.get("name") != source_name:
             raise ValueError(
                 f"Snapshot name {snapshot.get('name')!r} does not match {source_name!r}"
@@ -55,6 +42,8 @@ def load_migration_set(source_dir=SOURCE_DIR):
         if not snapshot.get("xmlDefinition"):
             raise ValueError(f"Snapshot has no xmlDefinition: {source_path}")
         ET.fromstring(snapshot["xmlDefinition"])
+        if source_name in migration_set:
+            raise ValueError(f"Duplicate snapshot name: {source_name!r}")
         migration_set[source_name] = snapshot
 
     return migration_set
@@ -89,8 +78,9 @@ def prepare_script(snapshot, name_map, destination_domain_id):
     }, rewritten_references
 
 
-def target_names(migration_set):
-    return {name: f"{name}{TARGET_SUFFIX}" for name in migration_set}
+def target_names(migration_set, target_suffix=""):
+    """Preserve source names unless an optional destination suffix is supplied."""
+    return {name: f"{name}{target_suffix}" for name in migration_set}
 
 
 def dependency_order(migration_set):
@@ -127,7 +117,7 @@ def confirm_destination(client, confirmed_domain=None):
     print(f"Connected destination domain: {client.domain_name}")
     if confirmed_domain is None:
         confirmed_domain = input(
-            "Type the exact destination domain name to create these IVRs: "
+            "Type the exact destination domain name to create or update these IVRs: "
         )
     if confirmed_domain != client.domain_name:
         raise ValueError(
@@ -137,7 +127,9 @@ def confirm_destination(client, confirmed_domain=None):
     return confirmed_domain
 
 
-def apply_migration(client, migration_set, confirmed_domain, resume=False):
+def apply_migration(
+    client, migration_set, confirmed_domain, resume=False, target_suffix=""
+):
     """Create and populate the destination scripts after safety checks."""
     if confirmed_domain != client.domain_name:
         raise ValueError(
@@ -145,7 +137,8 @@ def apply_migration(client, migration_set, confirmed_domain, resume=False):
             f"{confirmed_domain!r}"
         )
 
-    name_map = target_names(migration_set)
+    ordered_names = dependency_order(migration_set)
+    name_map = target_names(migration_set, target_suffix)
     existing_scripts = client.throttled_service.getIVRScripts(namePattern=".*") or []
     existing_names = {script.name for script in existing_scripts}
     collisions = sorted(set(name_map.values()) & existing_names)
@@ -154,10 +147,7 @@ def apply_migration(client, migration_set, confirmed_domain, resume=False):
             "Refusing to overwrite existing destination IVRs: " + ", ".join(collisions)
         )
     if resume:
-        unexpected_existing = sorted(existing_names & set(name_map.values()))
-        logging.info(
-            "Resume mode: reusing %d existing target IVRs", len(unexpected_existing)
-        )
+        logging.info("Resume mode: reusing %d existing target IVRs", len(collisions))
 
     prepared_scripts = {}
     for source_name, snapshot in migration_set.items():
@@ -171,21 +161,21 @@ def apply_migration(client, migration_set, confirmed_domain, resume=False):
         if script["name"] not in existing_names:
             client.throttled_service.createIVRScript(name=script["name"])
 
-    for source_name in dependency_order(migration_set):
+    for source_name in ordered_names:
         script = prepared_scripts[source_name]
         client.throttled_service.modifyIVRScript(scriptDef=script)
         logging.info("Saved IVR: %s", script["name"])
 
 
-def print_plan(migration_set):
-    name_map = target_names(migration_set)
-    print(f"Source directory: {SOURCE_DIR}")
+def print_plan(migration_set, source_dir, target_suffix=""):
+    name_map = target_names(migration_set, target_suffix)
+    print(f"Source directory: {source_dir}")
     print(f"Scripts selected: {len(migration_set)}")
-    for source_name, target_name in name_map.items():
+    for source_name in dependency_order(migration_set):
         _, references = prepare_script(
             migration_set[source_name], name_map, destination_domain_id="DESTINATION"
         )
-        print(f"  {source_name} -> {target_name}")
+        print(f"  {source_name} -> {name_map[source_name]}")
         for old_reference, new_reference in references:
             print(f"    reference: {old_reference} -> {new_reference}")
 
@@ -194,6 +184,22 @@ if __name__ == "__main__":
     args = common_parser_arguments(
         additional_args=[
             {
+                "name": "--source-dir",
+                "type": Path,
+                "required": True,
+                "help": "Directory containing the IVR JSON snapshots to upload",
+            },
+            {
+                "name": "--file-pattern",
+                "default": "*.json",
+                "help": "Snapshot filename glob within the source directory (default: *.json)",
+            },
+            {
+                "name": "--target-suffix",
+                "default": "",
+                "help": "Optional suffix for destination IVR names; default preserves names",
+            },
+            {
                 "name": "--apply",
                 "action": "store_true",
                 "help": "Create and save the planned IVRs in the destination domain",
@@ -201,23 +207,33 @@ if __name__ == "__main__":
             {
                 "name": "--confirm-domain",
                 "default": None,
-                "help": "Exact destination domain name; required with --apply",
+                "help": "Exact destination domain name; prompted for if omitted with --apply",
             },
             {
                 "name": "--resume",
                 "action": "store_true",
-                "help": "Reuse and populate existing AOMT targets after a partial run",
+                "help": "Overwrite existing target IVR definitions after a partial run",
             },
         ]
     )
-    scripts = load_migration_set()
-    print_plan(scripts)
+    try:
+        scripts = load_migration_set(args.source_dir, args.file_pattern)
+        print_plan(scripts, args.source_dir, args.target_suffix)
+    except (ValueError, OSError, ET.ParseError) as error:
+        logging.error("Cannot prepare IVR upload: %s", error)
+        raise SystemExit(1)
 
     if args.apply:
+        if args.resume:
+            print("Resume mode will overwrite any existing target IVR definitions.")
         destination_client = create_five9_client(args)
         confirmed_domain = confirm_destination(destination_client, args.confirm_domain)
         apply_migration(
-            destination_client, scripts, confirmed_domain, resume=args.resume
+            destination_client,
+            scripts,
+            confirmed_domain,
+            resume=args.resume,
+            target_suffix=args.target_suffix,
         )
     else:
         print("Dry run only; no Five9 API connection or changes were made.")

@@ -1,3 +1,52 @@
+# Upload IVR Snapshots
+
+`upload_ivr_snapshots.py` uploads locally exported IVR JSON snapshots to a
+destination Five9 domain. Each file must contain `name` and `xmlDefinition`,
+with the name matching the filename without `.json`; `description` is optional.
+Use the `ivrs` directory from a domain snapshot, or a directory containing only
+the snapshots you want to upload. No customer-specific paths or paired files
+are required.
+
+Run these commands from the repository root after activating `venvs/five9`.
+Start with an offline preview; it does not connect to Five9:
+
+```sh
+python examples/ivrs/upload_ivr_snapshots.py --source-dir private/ivr_exports
+```
+
+Optionally select filenames with a quoted glob and append a suffix to uploaded
+script names:
+
+```sh
+python examples/ivrs/upload_ivr_snapshots.py --source-dir private/ivr_exports --file-pattern 'Support*.json' --target-suffix ' - Copy'
+```
+
+Review the selected scripts and their dependencies before applying. Prefer a
+sandbox destination. To upload, add `--apply` and optionally an existing stored
+credential alias:
+
+```sh
+python examples/ivrs/upload_ivr_snapshots.py --source-dir private/ivr_exports --target-suffix ' - Copy' --account_alias destination_account --apply
+```
+
+The script displays the connected domain and asks for its exact name before
+writing. `--confirm-domain 'Exact Destination Name'` supplies that confirmation
+non-interactively. Names are preserved unless `--target-suffix` is supplied.
+Existing target names are rejected by default. `--resume` **overwrites existing
+target IVR definitions**, so use it only for an intentionally resumed upload
+after reviewing and backing up those targets.
+
+References to other selected IVRs follow the chosen suffix, and child IVRs are
+populated before parents. Circular dependencies are rejected before API calls.
+References to unselected IVRs and all other configuration values are unchanged.
+Prompts, skills, external integrations, embedded credentials, and other
+domain-specific settings are not migrated or validated: review the exported
+definitions and ensure dependencies exist in the destination. The preview is
+not a complete dependency audit. Live calls use the built-in throttled service.
+
+This is unsupported sample code. For production workflows, consult Five9
+Professional Services or your Technical Account Manager.
+
 # IVR Variable Usage
 
 This script extracts variable usage from Five9 IVR scripts and outputs the data to a CSV file.
