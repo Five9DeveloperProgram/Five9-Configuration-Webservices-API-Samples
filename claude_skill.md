@@ -5,7 +5,7 @@ description: For Cowork users. Set up and use the Five9 Configuration Webservice
 
 # Five9 Configuration Webservices helper
 
-This skill gets a user from a bare machine to running Five9 domain administration tasks with the official Python wrapper. Many users are admins, not developers, so explain each step in plain language and confirm each step worked before moving on.
+This skill gets a user from a bare machine to running Five9 domain administration tasks with the sample Python wrapper. Many users are admins, not developers, so explain each step in plain language and confirm each step worked before moving on.
 
 The repo is unsupported by Five9 and provided as-is under the MIT license. Say so once, briefly, during setup, and remind the user to try changes in a non-production domain when one is available.
 
@@ -33,7 +33,7 @@ Then offer a one-time convenience: a project that points at this folder, so futu
 
 ## Source of truth
 
-The repo changes. Do not rely on memory for module names, function signatures, or install commands. After cloning, read the repo's `README.md` and skim its top-level layout and examples, then follow what they say. Use the steps below as the scaffold and let the README override them on any conflict.
+The repo changes. After cloning, read its `AGENTS.md` for shared guidance and safety rules, and `README.md` for setup commands. Inspect relevant examples and source for signatures rather than relying on memory. Use the steps below for Cowork-specific workflow; on conflicts, follow `AGENTS.md` for policy and current repo files for implementation details. Never let a setup example override the safety rules.
 
 Repo: https://github.com/Five9DeveloperProgram/Five9-Configuration-Webservices-API-Samples
 
@@ -76,12 +76,10 @@ If a Windows user later reports a stuck prompt, missing password input, or unusu
 3. **Clone the repo** into the shared folder from Step 0. Have the user `cd` into it first, since Claude cannot clone to their machine. Once cloned, Claude can read the README and code through the shared folder.
    `git clone https://github.com/Five9DeveloperProgram/Five9-Configuration-Webservices-API-Samples.git`
    If git is a blocker, the repo's "Download ZIP" option works too.
-4. **Create and activate a virtual environment** inside the repo folder, using the commands in the README. Typical forms:
-   - Windows: `python -m venv venv` then `venv\Scripts\Activate.ps1` (if PowerShell blocks scripts, suggest `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`, and explain what it does).
-   - macOS: `python3 -m venv venv` then `source venv/bin/activate`.
-5. **Install dependencies** with whatever the README specifies (usually `pip install -r requirements.txt`). Confirm it finishes without errors.
-6. **Credentials: prompt at run time, store nothing.** Do not create a `credentials.py` or any file, environment variable, or script argument that holds a username or password. The Five9 client in the library asks for the username and password in the terminal, and the password field is hidden as the user types. Every script you write must rely on that prompt, with no hardcoded or saved credentials. Tell the user to expect the prompt each run and to use a dedicated admin API user. Never ask them to paste a password into chat.
-7. **Smoke test.** Give the user a harmless read-only call to run in their own terminal (for example, fetching domain info, using the entry point the README describes). They type their credentials at the prompt and paste back the output. This proves credentials and connectivity work.
+4. **Create and activate a virtual environment** inside the repo folder, using the commands in the README. The repo uses `venvs/five9` (Windows: `py.exe -m venv venvs/five9` then `.\venvs\five9\Scripts\Activate.ps1`; macOS: `python3 -m venv venvs/five9` then `source venvs/five9/bin/activate`). If PowerShell blocks activation, explain the implications of changing execution policy and ask the user to follow their organization's policy.
+5. **Install the package** from the repo root with `pip install -e .`, as in the README. Confirm it finishes without errors.
+6. **Credentials: prefer the interactive prompt.** Installation may create an ignored `private/credentials.py` template, and an existing `default_account` can be used automatically when no username is supplied. For scripts you write for this workflow, explicitly prompt locally for the username and pass it to `Five9Client` (or use the repo's CLI `--username` argument without `--password`); the client then prompts for the hidden password. Never include a password on a command line or store one in generated scripts. Do not read, edit, or ask users to paste the contents of their credentials file into chat. Refer to `AGENTS.md` if a user chooses the repo's existing local account-alias workflow.
+7. **Smoke test.** Give the user a harmless read-only call to run in their own terminal (for example, fetching domain info, using the entry point the README describes). They type credentials locally; ask for redacted output only (no auth headers, secrets, or customer data). This proves credentials and connectivity work.
 
 If anything fails, read the error, explain it plainly, and fix it before continuing. Common causes: Python not on PATH, venv not activated, wrong data center or API user permissions.
 
@@ -93,16 +91,16 @@ Supported task areas, in order of priority:
 - **Contacts and lists.** Upload contact records to lists, map CSV columns to Five9 contact fields, and check results.
 - **Domain documentation utilities.** Run the repo's utilities that export or document domain configuration.
 
-For each task, read the relevant module or example in the cloned repo (through the shared folder), then write a short script into a `scripts/` folder beside the repo, not inside it, so a `git pull` never collides with the user's work. Scripts must never contain credentials; they rely on the library's run-time prompt, which cannot work in Claude's sandbox anyway because it needs an interactive terminal and a route to Five9. Give the user the exact command to run it from their activated virtual environment, and ask them to paste back the output. Do not run Five9 calls from the sandbox.
+For each task, read the relevant module or example in the cloned repo (through the shared folder), then write a short script into a `scripts/` folder beside the repo, not inside it, so an approved update will not collide with the user's work. Scripts must never contain credentials; they prompt locally as described above. Give the user the exact command to run it from their activated virtual environment, and ask for redacted output only. Do not run Five9 calls from the sandbox.
 
-## Which domain? The username decides
+## Which domain? Confirm the target
 
-Users often say things like "I need to do this on a customer domain." The Five9 username they type at the login prompt determines which domain the script works in, so there is no domain name to ask about or configure. Do not quiz the user about domain names. Instead:
+The username they enter determines which domain the script reaches. Do not infer the domain from an alias or assume it is a sandbox. Before a live write, confirm the intended target with the user and, where available, use a read-only check such as `client.domain_name` to verify the connected domain before applying changes.
 
 - **Geography is the one exception.** The library defaults to the US API hostname. If the user's domain is outside the US (for example EU, Canada, or another region), the script must point at that region's API hostname, or login will fail or hit the wrong place. Ask one short question the first time: "Is this domain in the US, or another region?" Skip it if they have already said. For non-US domains, read the README and code to find how the library sets the hostname or region, and set it in the script. Do not guess the hostname or the setting name. If a login fails with a connection or authentication error on a domain the user says is valid, check the region first.
 - Tell them to log in with a username that belongs to the target domain and has API permissions (an admin user with access to the Configuration Web Services API). If login fails with a permissions error, that is the first thing to check.
 - For several domains, they run the script once per domain and enter that domain's username each time.
-- Because this is the only guard against writing to the wrong domain, ask them to confirm the target during the dry run ("this will run against the domain your login belongs to") and to say whether it is production. Ask once, in one line, not as an interview.
+- During the dry run, display the connected domain and ask the user to confirm it matches their intended target and whether it is production. Ask once, in one line, not as an interview.
 
 ## Safety: dry run, then confirm
 
@@ -114,7 +112,7 @@ Every write to a live domain (creating or modifying users, skills, lists, contac
 4. **Execute**, logging each result to a file.
 5. **Verify.** Re-read the domain and confirm the changes landed. Report any failures with the reason.
 
-Reads (including documentation utilities) need no confirmation. Deletions get an extra, separate confirmation naming exactly what will be removed.
+Before an agent initiates *any* live API call, including reads or integration tests, get the user's explicit approval for that domain as required by `AGENTS.md`. A user running a read-only command locally does not need a separate write confirmation. For deletion or rename, follow `OBJECT_DEPENDENCIES.md` first: capture current state, check reverse references and live dependencies, and report gaps, detach plan, backup path, and validation plan before seeking approval. Deletions get an extra, separate confirmation naming exactly what will be removed.
 
 ## Style
 

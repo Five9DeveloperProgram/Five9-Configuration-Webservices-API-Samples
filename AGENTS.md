@@ -1,10 +1,9 @@
 # Five9 Configuration Webservices API Samples — AI Agent Guide
 
-> **Canonical guidance doc.** This is the tool-agnostic source of truth for AI coding
-> assistants working in this repo. `.github/copilot-instructions.md` is kept in sync
-> with this file for GitHub Copilot (which only reads its own file directly).
-> `CLAUDE.md` at the repo root imports this file for Claude Code. When instructions
-> change, update **this file first**, then propagate.
+> **Canonical guidance doc.** This is the tool- and model-agnostic source of truth
+> for AI assistants working in this repo. `CLAUDE.md` imports it for Claude Code;
+> `.github/copilot-instructions.md` points to it for Copilot. Keep shared rules
+> here and tool-specific instructions in their respective entry points.
 
 ## Who this is for
 
@@ -350,8 +349,8 @@ print(client.latest_envelopes)          # Both
    for security. Only `.github/copilot-instructions.md` is allowed through the
    `.github/` ignore rule; check with `git ls-files` before assuming other
    files in that folder are version-controlled.
-5. **Virtual Environment**: Always activate `venvs/five9` before running
-   scripts.
+5. **Virtual Environment**: Activate `venvs/five9` before running scripts or
+   direct test commands. `make unit` handles the environment itself.
 6. **Zeep Caching**: The first run may be slow while the WSDL is fetched/cached.
 7. **Domain Name**: Available as `client.domain_name` after initialization
    (admin sessions only; not populated for `sessiontype="statistics"`).
@@ -368,7 +367,7 @@ python -m five9.five9_session --account my_account # Use specific account
 ### Running Examples
 ```bash
 python examples/domain_current_ratelimits.py --account_alias default_account
-python examples/user_management/bulk_user_create.py --username user@domain --password pass
+python examples/user_management/bulk_user_create.py --account_alias default_account
 ```
 
 ### Testing
@@ -422,11 +421,16 @@ mistakes can affect live agents, campaigns, and customer data.
      keep secrets out of shell history and chat transcripts.
    - Don't write scripts that hardcode credentials as string literals; use the
      existing `common_parser_arguments`/`create_five9_client` auth chain instead.
+   - Before sharing command output or SOAP envelopes, redact credentials,
+     authorization headers, and customer data.
 
 2. **Treat every connected Five9 domain as potentially production.**
    - There is no reliable, automatic way to tell a sandbox/trial domain from a
      live production domain purely from the API. Don't assume `default_account`
      or any configured alias is "just a test domain."
+   - Before an agent runs any example, integration test, or API call against a
+     live domain (including read-only calls), get the user's explicit approval
+     for connecting to that domain. Offline unit tests need no approval.
    - Before running anything that **writes, modifies, or deletes** domain
      configuration — e.g. `bulk_user_create.py`, `bulk_user_update_from_csv.py`,
      `bulk_user_skill_update.py`, `bulk_user_SSO_pseudo_enforce.py`,
@@ -475,8 +479,8 @@ mistakes can affect live agents, campaigns, and customer data.
   unless necessary
 - **Breaking Changes**: Avoid breaking existing examples; maintain backward
   compatibility
-- **Documentation**: Update this file (`AGENTS.md`) first when adding major
-  features or patterns, then propagate to `.github/copilot-instructions.md`
+- **Documentation**: Update this file (`AGENTS.md`) for shared guidance; only
+  update tool entry points when their tool-specific behavior changes.
 - **Testing**: Add unit tests for new utility functions; integration tests
   optional but encouraged
 - **Credentials**: Never request or expect user credentials in code review

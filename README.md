@@ -400,7 +400,9 @@ Helper script (runnable anywhere):
 2. Implement changes.
 3. Run `make unit` for quick feedback.
 4. Run `make coverage` to watch for regressions.
-5. Run `make test` before PR (executes integration iff creds available).
+5. Run `make test` only after confirming the target domain and getting explicit
+   approval for live integration tests; it sets `F9_INTEGRATION=1`. Otherwise,
+   stick to `make unit` and `make coverage` (offline).
 6. View `htmlcov/index.html` if needed.
 
 ### Environment Variables
