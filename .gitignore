@@ -1,6 +1,7 @@
-# ignore .github folder for now
+# Track only the shared Copilot guidance; keep other .github files ignored
 client_scripts/
-.github/
+.github/*
+!.github/copilot-instructions.md
 
 # Windows image file caches
 Thumbs.db

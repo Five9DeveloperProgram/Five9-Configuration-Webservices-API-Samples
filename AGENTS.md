@@ -347,9 +347,9 @@ print(client.latest_envelopes)          # Both
    `ThrottledServiceProxy` only if you understand the rate-limit implications
    (see Safety guardrails).
 4. **Credentials**: NEVER commit `private/credentials.py` — it's git-ignored
-   for security. Note that `.gitignore` also currently excludes the whole
-   `.github/` folder, so don't assume something is version-controlled just
-   because it's tracked locally — check with `git ls-files` if it matters.
+   for security. Only `.github/copilot-instructions.md` is allowed through the
+   `.github/` ignore rule; check with `git ls-files` before assuming other
+   files in that folder are version-controlled.
 5. **Virtual Environment**: Always activate `venvs/five9` before running
    scripts.
 6. **Zeep Caching**: The first run may be slow while the WSDL is fetched/cached.
@@ -385,6 +385,18 @@ git pull                                           # Update repository
 pip install -e .                                   # Reinstall (preserves credentials)
 F9_RESET_PRIVATE=1 pip install -e .               # Force credential template reset
 ```
+
+### Checking for toolkit updates
+When a newer helper or example might help with a user's task, occasionally
+offer to check for repository updates; don't interrupt every conversation or
+suggest that an update adds new Five9 API functionality. If the user agrees,
+run `git fetch origin` and compare the local checkout with `origin/main`
+(for example, `git log HEAD..origin/main --oneline`). Explain relevant new
+utilities or examples in plain language. This check does not change the
+user's working files. For downloads without a Git checkout, point the user
+to the repository's GitHub page rather than assuming Git commands will work.
+Never run `git pull` or change the checkout without the user's approval;
+check for local modifications first and explain any risk of conflicts.
 
 ## Safety guardrails for AI agents
 
