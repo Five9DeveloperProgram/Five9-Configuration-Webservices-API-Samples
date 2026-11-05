@@ -381,7 +381,7 @@ make unit                                          # Fast tests via Makefile
 
 ### Installation/Setup
 ```bash
-git pull                                           # Update repository
+git pull --ff-only                                 # Update after approval and checks below
 pip install -e .                                   # Reinstall (preserves credentials)
 F9_RESET_PRIVATE=1 pip install -e .               # Force credential template reset
 ```
@@ -397,6 +397,12 @@ user's working files. For downloads without a Git checkout, point the user
 to the repository's GitHub page rather than assuming Git commands will work.
 Never run `git pull` or change the checkout without the user's approval;
 check for local modifications first and explain any risk of conflicts.
+Before updating, verify the current branch and its configured upstream (the
+remote branch it tracks) match the intended update source; do not assume a
+custom branch tracks `origin/main`. With approval, use `git pull --ff-only`
+on that verified tracking branch. This only advances the branch when no merge
+is needed. If it refuses, stop and explain the problem; do not automatically
+merge, rebase, reset, stash, or discard local work to force an update.
 
 ## Safety guardrails for AI agents
 
