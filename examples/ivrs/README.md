@@ -1,3 +1,41 @@
+# IVR Prompt and TTS Inventory
+
+Run the read-only Python equivalent of `getPrompts` + `getIVRScripts` to make
+a local CSV you can open and filter in Excel. The script does **not** export
+the full IVR XML or send it to Excel Power Query, Claude, or another service:
+
+```sh
+source venvs/five9/bin/activate
+python examples/ivrs/ivr_prompt_inventory.py --account_alias default_account
+```
+
+By default, the report is `private/ivr_prompt_inventory.csv` (git-ignored,
+created with owner-only permissions). To run again, choose a **new** filename
+with `--output private/another_inventory.csv`. An existing report is never
+replaced. Add `--exclude-announcements` to omit modules tagged `announcement`
+and prompts marked `isAnnouncement=true`. No live Five9 data is needed to run
+the offline unit tests; running the example **does** connect to the configured
+domain, so check the account alias before running it.
+
+Each row records the domain, IVR script, module type/name, languages, prompt
+name, source (`Domain prompt`, `IVR-only TTS`, or `Not in getPrompts`), whether
+domain metadata explicitly identifies the prompt as TTS (`TTSGenerated` versus
+`PreRecorded`), decoded TTS text,
+variables used in IVR-only TTS, and an announcement indicator. A blank
+`Domain prompt TTS` means the API returned no recognizable prompt-type field;
+it does **not** mean the prompt is a recording. `Not in getPrompts` can also
+mean a stale IVR reference, not necessarily a deleted prompt. The
+`getPrompts` responses inspected here contain the `TTSGenerated` type but
+no spoken-text field, so the `TTS text` column remains blank for those domain
+prompts. The exporter only includes domain speech text if a response explicitly
+supplies `ttsText`; it does not invent or fetch text from another endpoint.
+Inline IVR TTS is decoded using the same utility as IVR diagrams.
+
+**Treat the CSV as sensitive:** spoken text and variable names can disclose
+customer data or integration details. Inspect it locally and do not upload
+it to AI tools or commit it to git. This is sample code, not a supported
+production integration.
+
 # Upload IVR Snapshots
 
 `upload_ivr_snapshots.py` uploads locally exported IVR JSON snapshots to a
