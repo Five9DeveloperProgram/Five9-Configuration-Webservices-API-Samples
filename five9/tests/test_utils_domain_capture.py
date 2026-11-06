@@ -1,3 +1,4 @@
+import io
 import os
 import tempfile
 import unittest
@@ -163,6 +164,32 @@ class TestSnapshotRepoPersistence(unittest.TestCase):
             [mock.call(0.2), mock.call(0.3), mock.call(0.7), mock.call(0.3)],
         )
 
+    def test_counter_readout_only_logs_nonzero_usage(self):
+        client = _fake_client("Test Domain")
+        cfg = domain_capture.Five9DomainConfig(client=client, methods=[])
+        client.service.getCallCountersState.return_value = [
+            {
+                "timeout": 60,
+                "callCounterStates": [
+                    {"operationType": "QUERY", "value": 1, "limit": 180},
+                    {"operationType": "UPDATE", "value": 0, "limit": 60},
+                ],
+            }
+        ]
+        with self.assertLogs(domain_capture.LOGGER, level="INFO") as logs:
+            cfg._check_call_counters()
+        self.assertEqual(
+            logs.output,
+            ["INFO:five9.utils.domain_capture:API usage QUERY (60s): 1/180"],
+        )
+        client.service.getCallCountersState.return_value[0]["callCounterStates"][0][
+            "value"
+        ] = 0
+        with mock.patch.object(domain_capture.LOGGER, "info") as log_info:
+            cfg._check_call_counters()
+        log_info.assert_not_called()
+        self.assertEqual(cfg.call_delay, 0.5)
+
     def test_invalid_retry_and_monitor_settings_rejected(self):
         for kwargs in (
             {"rate_limit_retries": -1},
@@ -293,6 +320,58 @@ class TestSnapshotRepoPersistence(unittest.TestCase):
         ) as create_capture:
             self.assertEqual(domain_config_capture.main(), 0)
         create_capture.return_value.get_domain_objects.assert_called_once_with()
+
+    def test_detail_progress_counts_objects_without_printing_names(self):
+        cfg = domain_capture.Five9DomainConfig(
+            client=_fake_client("Test Domain"), methods=[]
+        )
+        items = [
+            SimpleNamespace(name="First campaign"),
+            SimpleNamespace(name="Second campaign"),
+        ]
+        cfg.client.service.getOutboundCampaign.return_value = {"description": "Test"}
+        output, progress_output = io.StringIO(), io.StringIO()
+        with mock.patch("sys.stdout", output), mock.patch(
+            "sys.stderr", progress_output
+        ):
+            cfg.get_config_object_detail(
+                "getCampaigns", "campaigns_outbound", items, "getOutboundCampaign"
+            )
+        self.assertIn("campaigns_outbound", progress_output.getvalue())
+        self.assertIn("2/2", progress_output.getvalue())
+        self.assertEqual(output.getvalue(), "")
+        for item in items:
+            self.assertNotIn(item.name, progress_output.getvalue())
+            self.assertTrue(
+                os.path.isfile(
+                    os.path.join(
+                        cfg.domain_path, "campaigns_outbound", item.name + ".json"
+                    )
+                )
+            )
+
+    def test_detail_progress_closes_on_failure_and_preserves_warning(self):
+        cfg = domain_capture.Five9DomainConfig(
+            client=_fake_client("Test Domain"), methods=[], rate_limit_retries=0
+        )
+
+        def fail_detail(*args, **kwargs):
+            domain_capture.LOGGER.warning("Test capture warning")
+            raise Fault("Permission denied")
+
+        cfg.client.service.getCampaignProfileFilter.side_effect = fail_detail
+        progress_output = io.StringIO()
+        with mock.patch("sys.stderr", progress_output):
+            with self.assertRaises(Fault):
+                cfg.get_config_object_detail(
+                    "getCampaignProfiles",
+                    "campaign_profile_filters",
+                    [SimpleNamespace(name="Profile")],
+                    "getCampaignProfileFilter",
+                )
+        self.assertIn("0/1", progress_output.getvalue())
+        self.assertIn("Test capture warning", progress_output.getvalue())
+        self.assertTrue(progress_output.getvalue().endswith("\n"))
 
 
 if __name__ == "__main__":

@@ -36,7 +36,7 @@ The default pause is **0.5 seconds, not 0.8 seconds**, plus API response time.
 An already-slower custom proxy adds its extra delay; capture never shortens it.
 These settings govern capture reads, not the client's initial connection setup.
 
-Usage checks log the reported counters. At 80% of any reported limit, or after
+Usage checks log only counters with nonzero usage. At 80% of any reported limit, or after
 a query-limit fault, capture raises its pause to at least 1 second for the
 remainder of that instance's lifetime. For the reported query-limit fault,
 capture waits at least the specified window (never less than 60 seconds) before
@@ -68,6 +68,10 @@ partial files. Resolve the failure, allow API usage to subside, and rerun the
 capture; a successful run rebuilds the files and creates a new snapshot commit.
 
 ## Captured details
+
+Detail capture uses `tqdm` progress bars for campaigns, campaign profile filters,
+skills, and IVRs, showing completed counts and estimated time remaining instead
+of printing every object name. Rate-limit warnings and errors remain visible.
 
 Certain methods such as getCampaigns, getSkills, and getCampaignProfiles respond with a configuration object that requires an additional call to a corresponding detail method to obtain more information about the target objects.  In these cases, the script is configured to iterate through the objects in the response and store the additional detail in a subfolder.  For the getCampaigns method, the method needed to obtain the campaign details depends on the campaign type (inbound or outbound).  In this case, it will store the campaign details in a campaigns_inbound and campaigns_outbound folder accordingly.  
 

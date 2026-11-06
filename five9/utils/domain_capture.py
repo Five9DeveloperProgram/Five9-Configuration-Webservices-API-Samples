@@ -12,6 +12,8 @@ from git import Repo
 from git.exc import InvalidGitRepositoryError
 import zeep
 import zeep.helpers
+from tqdm import tqdm
+from tqdm.contrib.logging import logging_redirect_tqdm
 
 from five9 import five9_session
 from .campaign_profile_comprehension import demystify_filter
@@ -178,6 +180,8 @@ class Five9DomainConfig:
             for state in window.get("callCounterStates") or []:
                 limit = state["limit"]
                 value = state["value"]
+                if value == 0:
+                    continue
                 LOGGER.info(
                     "API usage %s (%ss): %s/%s",
                     state["operationType"],
@@ -289,27 +293,33 @@ class Five9DomainConfig:
         subfolder_path = os.path.join(self.domain_path, subfolder_name)
 
         os.makedirs(os.path.dirname(subfolder_path), exist_ok=True)
-        print(f"\n\t{parent_method_name} - {subfolder_name}")
         self.domain_objects[f"{parent_method_name}_{subfolder_name}"] = {}
 
-        for domain_object in method_response:
-            object_name = domain_object.name
-            print(f"\t\t{object_name}")
-            if vcc_method is not None:
-                domain_object = self._call_service(vcc_method, object_name)
-                # print(domain_object)
-            self.domain_objects[f"{parent_method_name}_{subfolder_name}"][
-                object_name
-            ] = zeep.helpers.serialize_object(domain_object, dict)
-            target_path = os.path.join(subfolder_path, object_name)
-            os.makedirs(os.path.dirname(target_path), exist_ok=True)
-            captured_object = self.domain_objects[
-                f"{parent_method_name}_{subfolder_name}"
-            ][object_name]
-            self.write_object_to_target_path(target_path, captured_object)
+        with logging_redirect_tqdm(), tqdm(
+            method_response or [],
+            desc=subfolder_name,
+            unit="object",
+            mininterval=1,
+            dynamic_ncols=True,
+        ) as objects:
+            for domain_object in objects:
+                object_name = domain_object.name
+                if vcc_method is not None:
+                    domain_object = self._call_service(vcc_method, object_name)
+                self.domain_objects[f"{parent_method_name}_{subfolder_name}"][
+                    object_name
+                ] = zeep.helpers.serialize_object(domain_object, dict)
+                target_path = os.path.join(subfolder_path, object_name)
+                os.makedirs(os.path.dirname(target_path), exist_ok=True)
+                captured_object = self.domain_objects[
+                    f"{parent_method_name}_{subfolder_name}"
+                ][object_name]
+                self.write_object_to_target_path(target_path, captured_object)
 
-            if self.generate_ivr_diagrams and subfolder_name == "ivrs":
-                self.write_ivr_documentation(target_path, object_name, captured_object)
+                if self.generate_ivr_diagrams and subfolder_name == "ivrs":
+                    self.write_ivr_documentation(
+                        target_path, object_name, captured_object
+                    )
 
     def write_ivr_documentation(self, target_path, ivr_name, captured_ivr):
         """Emit an SVG call-flow and a Markdown prompt summary alongside the
@@ -327,9 +337,9 @@ class Five9DomainConfig:
                 target_path,
                 name=ivr_name,
             )
-            print(f"\t\t\tdiagram + docs: {ivr_name}")
+            LOGGER.debug("Generated diagram and documentation for %s", ivr_name)
         except Exception as e:
-            print(f"\t\t\tskipped diagram for {ivr_name}: {e}")
+            LOGGER.warning("Skipped diagram for %s: %s", ivr_name, e)
 
     def get_domain_objects(self, methods=None):
         if methods is None:
@@ -432,10 +442,8 @@ class Five9DomainConfig:
                                 f"Failed to retrieve {method}"
                             ) from error
 
-                # add changes to the git repo and commit
-                # print the repo status and path
                 os.remove(os.path.join(self.domain_path, INCOMPLETE_MARKER))
-                print(f"Git Status: {self.repo.git.status()}")
+                LOGGER.info("Committing captured domain configuration")
                 self.repo.git.add(A=True)
                 self.repo.index.commit(
                     f"Domain Object Sync {time.strftime('%Y-%m-%d %H:%M:%S')}"
