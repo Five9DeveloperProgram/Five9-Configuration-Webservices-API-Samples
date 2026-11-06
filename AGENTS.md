@@ -266,6 +266,14 @@ coverage html && open htmlcov/index.html
 - `examples/domain_config/domain_config_capture.py` also generates IVR
   diagrams/docs during capture by default (`--skip-ivr-documentation` to
   opt out)
+- Capture reads use `client.throttled_service` with a configurable total pause
+  (`--call-delay`, default 0.5 seconds), bounded query-limit retries, and periodic
+  call-counter checks. High usage raises the pause to at least 1 second. See
+  `examples/domain_config/README.md` for retry and monitoring options.
+- Failed captures raise `DomainCaptureError` (CLI exit status 1), leave
+  `CAPTURE_INCOMPLETE.txt`, and do not commit a snapshot. Working files may be
+  partial; previous committed snapshots remain in Git history. Do not treat
+  these working files as a complete backup or manually commit them.
 - Before deleting or renaming a domain object, follow
   `OBJECT_DEPENDENCIES.md`. It documents reverse-reference checks, snapshot
   coverage gaps, and the required dependency report.

@@ -1,20 +1,31 @@
 import datetime
 import json
+import logging
+import math
 import os
+import random
+import re
 import shutil
 import time
 
 from git import Repo
 from git.exc import InvalidGitRepositoryError
 import zeep
+import zeep.helpers
 
 from five9 import five9_session
 from .campaign_profile_comprehension import demystify_filter
 from . import ivr_diagram
 
 API_SLEEP_INTERVAL = 0.3
+LOGGER = logging.getLogger(__name__)
+QUERY_LIMIT_FAULT = re.compile(
+    r"(\d+)\s+seconds?\s+limit\s+\(\d+\)\s+for\s+query\s+operation\s+is\s+reached",
+    re.IGNORECASE,
+)
 
 REPO_PATH = "domain_snapshots"
+INCOMPLETE_MARKER = "CAPTURE_INCOMPLETE.txt"
 
 METHOD_DEFAULT_ARGS = {
     "getAgentGroups": ".*",
@@ -44,7 +55,18 @@ METHOD_DEPENDENCIES = {
 }
 
 
+class DomainCaptureError(RuntimeError):
+    """The capture did not finish and must not be used as a complete snapshot."""
+
+
 class Five9DomainConfig:
+    """Capture domain objects with paced reads and bounded query-limit retries.
+
+    ``call_delay`` includes the built-in proxy's 0.3-second pause. Usage checks
+    and rate-limit faults raise it to at least one second for this instance.
+    A supplied client must expose ``throttled_service`` like ``Five9Client``.
+    """
+
     def __init__(
         self,
         client=None,
@@ -55,7 +77,21 @@ class Five9DomainConfig:
         sync_target_domain=None,
         methods=METHODS,
         generate_ivr_diagrams=False,
+        call_delay=0.5,
+        rate_limit_retries=3,
+        counter_check_interval=30,
     ):
+        if not math.isfinite(call_delay) or call_delay < API_SLEEP_INTERVAL:
+            raise ValueError("call_delay must be finite and at least 0.3 seconds")
+        if not isinstance(rate_limit_retries, int) or not 0 <= rate_limit_retries <= 10:
+            raise ValueError("rate_limit_retries must be an integer between 0 and 10")
+        if not isinstance(counter_check_interval, int) or counter_check_interval < 1:
+            raise ValueError("counter_check_interval must be a positive integer")
+        self.call_delay = call_delay
+        self.rate_limit_retries = rate_limit_retries
+        self.counter_check_interval = counter_check_interval
+        self._calls_since_counter_check = 0
+        self._last_api_method = None
         self.client = client
         self.sync_target_domain = sync_target_domain
         self.methods = methods
@@ -105,10 +141,61 @@ class Five9DomainConfig:
                 print(f"SYNC - {sync_object}")
                 sync_method()
 
+    def _call_service(self, method, *args, **kwargs):
+        if self._calls_since_counter_check >= self.counter_check_interval:
+            self._check_call_counters()
+        return self._request(method, *args, **kwargs)
+
+    def _request(self, method, *args, **kwargs):
+        self._last_api_method = method
+        for attempt in range(self.rate_limit_retries + 1):
+            time.sleep(self.call_delay - API_SLEEP_INTERVAL)
+            self._calls_since_counter_check += 1
+            try:
+                return getattr(self.client.throttled_service, method)(*args, **kwargs)
+            except zeep.exceptions.Fault as error:
+                match = QUERY_LIMIT_FAULT.search(str(error))
+                if match is None or attempt == self.rate_limit_retries:
+                    raise
+                wait_seconds = max(60, int(match.group(1))) * 2 ** attempt
+                wait_seconds += random.uniform(0, 5)
+                self.call_delay = max(self.call_delay, 1.0)
+                LOGGER.warning(
+                    "%s reached the query limit; waiting %.1fs before retry %d/%d",
+                    method,
+                    wait_seconds,
+                    attempt + 1,
+                    self.rate_limit_retries,
+                )
+                time.sleep(wait_seconds)
+
+    def _check_call_counters(self):
+        counters = zeep.helpers.serialize_object(
+            self._request("getCallCountersState"), dict
+        )
+        self._calls_since_counter_check = 0
+        for window in counters or []:
+            for state in window.get("callCounterStates") or []:
+                limit = state["limit"]
+                value = state["value"]
+                LOGGER.info(
+                    "API usage %s (%ss): %s/%s",
+                    state["operationType"],
+                    window["timeout"],
+                    value,
+                    limit,
+                )
+                if limit > 0 and value >= 0.8 * limit:
+                    self.call_delay = max(self.call_delay, 1.0)
+                    LOGGER.warning(
+                        "API usage is at least 80%%; capture delay is now %.1fs",
+                        self.call_delay,
+                    )
+
     def getVCCConfiguration(self):
         """Method to get the VCC Configuration for the domain and create the domain snapshot folder"""
 
-        self.vccConfig = self.client.service.getVCCConfiguration()
+        self.vccConfig = self._call_service("getVCCConfiguration")
 
         # One stable folder per domain so the git history accumulates across
         # captures and `git diff` / `git log` show what changed between runs.
@@ -149,7 +236,15 @@ class Five9DomainConfig:
             print(f"Created new repo at {self.domain_path}")
 
         print(f"\nDomain snapshot initialized for:\n{self.vccConfig.domainName}\n")
+        self._mark_capture_incomplete()
 
+    def _mark_capture_incomplete(self):
+        with open(os.path.join(self.domain_path, INCOMPLETE_MARKER), "w") as marker:
+            marker.write(
+                "Capture is in progress or failed. Do not use these working files "
+                "as a complete snapshot. Previous committed snapshots remain in "
+                "Git history. Rerun the capture after resolving the failure.\n"
+            )
 
     def write_object_to_target_path(
         self,
@@ -176,16 +271,10 @@ class Five9DomainConfig:
 
         if toJson == True:
             filetype = "json"
-            try:
-                clean_object = fix_datetimes(domain_object)  # <= Only modifies datetime fields
-                output_string = json.dumps(
-                    clean_object,
-                    sort_keys=sort_keys,
-                    indent=indent
-                )
-            except TypeError as e:
-                print(f"Error: {e}")
-                print(f"Domain Object: {domain_object}")
+            clean_object = fix_datetimes(domain_object)
+            output_string = json.dumps(
+                clean_object, sort_keys=sort_keys, indent=indent
+            )
         else:
             output_string = domain_object
 
@@ -207,9 +296,7 @@ class Five9DomainConfig:
             object_name = domain_object.name
             print(f"\t\t{object_name}")
             if vcc_method is not None:
-                sub_method = getattr(self.client.service, vcc_method)
-                domain_object = sub_method(object_name)
-                time.sleep(0.2)
+                domain_object = self._call_service(vcc_method, object_name)
                 # print(domain_object)
             self.domain_objects[f"{parent_method_name}_{subfolder_name}"][
                 object_name
@@ -249,13 +336,14 @@ class Five9DomainConfig:
             methods = self.methods
         if self.client is not None:
             try:
+                self._check_call_counters()
                 self.getVCCConfiguration()
+                self.domain_objects = {}
 
                 print("Processing Domain Object Methods")
                 for method in self.client.service._operations.keys():
                     if method in methods:
                         print(f"\t{method}")
-                        vcc_method = getattr(self.client.service, method)
                         target_path_for_method = os.path.join(self.domain_path, method)
                         # create directory for the target path
                         os.makedirs(
@@ -264,11 +352,11 @@ class Five9DomainConfig:
 
                         try:
                             if method in METHOD_DEFAULT_ARGS.keys():
-                                method_response = vcc_method(
-                                    METHOD_DEFAULT_ARGS[method]
+                                method_response = self._call_service(
+                                    method, METHOD_DEFAULT_ARGS[method]
                                 )
                             else:
-                                method_response = vcc_method()
+                                method_response = self._call_service(method)
 
                             if method == "getIVRScripts":
                                 self.get_config_object_detail(
@@ -282,14 +370,18 @@ class Five9DomainConfig:
                                 self.write_object_to_target_path(
                                     target_path_for_method, self.domain_objects[method]
                                 )
-                                method_response = vcc_method(campaignType="OUTBOUND")
+                                method_response = self._call_service(
+                                    method, campaignType="OUTBOUND"
+                                )
                                 self.get_config_object_detail(
                                     method,
                                     "campaigns_outbound",
                                     method_response,
                                     "getOutboundCampaign",
                                 )
-                                method_response = vcc_method(campaignType="INBOUND")
+                                method_response = self._call_service(
+                                    method, campaignType="INBOUND"
+                                )
                                 self.get_config_object_detail(
                                     method,
                                     "campaigns_inbound",
@@ -335,22 +427,30 @@ class Five9DomainConfig:
                                     target_path_for_method, self.domain_objects[method]
                                 )
 
-                        except zeep.exceptions.Fault as e:
-                            print("Error: ")
-                            print(e)
+                        except zeep.exceptions.Fault as error:
+                            raise DomainCaptureError(
+                                f"Failed to retrieve {method}"
+                            ) from error
 
                 # add changes to the git repo and commit
                 # print the repo status and path
+                os.remove(os.path.join(self.domain_path, INCOMPLETE_MARKER))
                 print(f"Git Status: {self.repo.git.status()}")
                 self.repo.git.add(A=True)
                 self.repo.index.commit(
                     f"Domain Object Sync {time.strftime('%Y-%m-%d %H:%M:%S')}"
                 )
 
-            except zeep.exceptions.Fault as e:
-                print(e)
+            except Exception as error:
+                if self.domain_path and os.path.isdir(self.domain_path):
+                    self._mark_capture_incomplete()
+                raise DomainCaptureError(
+                    f"Capture incomplete at {self.domain_path}; no snapshot commit "
+                    f"created. Last API method: {self._last_api_method}. "
+                    "Previous committed snapshots remain in Git history."
+                ) from error
         else:
-            print("No active client object available to connect with Five9 VCC")
+            raise DomainCaptureError("No active client available for capture")
 
     def sync_contactFields(self):
         pass
