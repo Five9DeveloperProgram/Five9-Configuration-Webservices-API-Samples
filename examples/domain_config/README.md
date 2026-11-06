@@ -36,7 +36,17 @@ The default pause is **0.5 seconds, not 0.8 seconds**, plus API response time.
 An already-slower custom proxy adds its extra delay; capture never shortens it.
 These settings govern capture reads, not the client's initial connection setup.
 
-Usage checks log only counters with nonzero usage. At 80% of any reported limit, or after
+Usage checks show only counters with nonzero usage, grouped by time window from
+longest to shortest (for example, day, hour, then minute). Within each window,
+the largest limits appear first. Aligned columns show the operation, calls used,
+allowed limit, and percentage used; `HIGH` marks usage of 80% or more. Each check
+produces one summary instead of a separate log line for every counter.
+
+The CLI separates capture phases with blank lines and uses readable progress
+labels. Routine messages omit timestamps and `INFO` prefixes; warnings and
+errors keep their severity labels so they stand out.
+
+At 80% of any reported limit, or after
 a query-limit fault, capture raises its pause to at least 1 second for the
 remainder of that instance's lifetime. For the reported query-limit fault,
 capture waits at least the specified window (never less than 60 seconds) before

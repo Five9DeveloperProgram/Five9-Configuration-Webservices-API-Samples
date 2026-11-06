@@ -9,6 +9,14 @@ from five9.five9_session import Five9ClientCreationError
 from five9.utils import domain_capture
 
 
+class _CaptureConsoleFormatter(logging.Formatter):
+    def format(self, record):
+        message = super().format(record)
+        if record.levelno == logging.INFO:
+            return message
+        return f"{record.levelname}: {message}"
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Captures domain configuration options in the domain_config domain_snapshots folder"
@@ -71,9 +79,9 @@ def main():
     )
 
     args = parser.parse_args()
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-    )
+    console = logging.StreamHandler()
+    console.setFormatter(_CaptureConsoleFormatter())
+    logging.basicConfig(level=logging.INFO, handlers=[console])
 
     password = args.password
 
@@ -102,7 +110,7 @@ def main():
             type(error).__name__,
         )
         return 1
-    logging.info("Domain capture completed successfully")
+    logging.info("\nCapture complete. Snapshot saved successfully.\n")
     return 0
 
 

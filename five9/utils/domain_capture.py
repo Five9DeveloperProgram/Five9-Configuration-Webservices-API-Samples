@@ -33,6 +33,14 @@ METHOD_DEFAULT_ARGS = {
     "getAgentGroups": ".*",
 }
 
+DETAIL_LABELS = {
+    "campaigns_outbound": "Outbound campaigns",
+    "campaigns_inbound": "Inbound campaigns",
+    "campaign_profile_filters": "Campaign profile filters",
+    "skills_info": "Skills",
+    "ivrs": "IVR scripts",
+}
+
 # Order of aquisition matters for purpose of syncing
 METHODS = [
     "getAvailableLocales",
@@ -106,12 +114,10 @@ class Five9DomainConfig:
         self.vccConfig = None
         self.repo = None
 
-        print("api_hostname_alias", api_hostname_alias)
+        LOGGER.debug("API host alias: %s", api_hostname_alias)
 
         if client is None:
-            print(
-                f"\nNo client provided, creating a new client for {username}{account}"
-            )
+            LOGGER.info("\nConnecting to Five9...\n")
             self.client = five9_session.Five9Client(
                 five9username=username, five9password=password, account=account, api_hostname_alias=api_hostname_alias
             )
@@ -163,7 +169,8 @@ class Five9DomainConfig:
                 wait_seconds += random.uniform(0, 5)
                 self.call_delay = max(self.call_delay, 1.0)
                 LOGGER.warning(
-                    "%s reached the query limit; waiting %.1fs before retry %d/%d",
+                    "Five9's read limit was reached (%s).\n"
+                    "Waiting %.1f seconds, then trying again (%d of %d).\n",
                     method,
                     wait_seconds,
                     attempt + 1,
@@ -176,25 +183,62 @@ class Five9DomainConfig:
             self._request("getCallCountersState"), dict
         )
         self._calls_since_counter_check = 0
-        for window in counters or []:
-            for state in window.get("callCounterStates") or []:
+        sections = []
+        high_usage = False
+        for window in sorted(
+            counters or [], key=lambda item: item["timeout"], reverse=True
+        ):
+            active_states = sorted(
+                (
+                    state
+                    for state in window.get("callCounterStates") or []
+                    if state["value"] != 0
+                ),
+                key=lambda state: (-state["limit"], str(state["operationType"])),
+            )
+            if not active_states:
+                continue
+            seconds = window["timeout"]
+            window_label = f"{seconds:,} seconds"
+            for duration, unit in (
+                (86400, "day"),
+                (3600, "hour"),
+                (60, "minute"),
+                (1, "second"),
+            ):
+                if seconds >= duration and seconds % duration == 0:
+                    count = seconds // duration
+                    window_label = f"{count:,} {unit}{'s' if count != 1 else ''}"
+                    break
+            name_width = max(
+                14, *(len(str(state["operationType"])) for state in active_states)
+            )
+            rows = [
+                f"  {window_label} window",
+                f"    {'Operation':<{name_width}} {'Used':>10} / {'Limit':<10} {'Usage':>6}",
+            ]
+            for state in active_states:
                 limit = state["limit"]
                 value = state["value"]
-                if value == 0:
-                    continue
-                LOGGER.info(
-                    "API usage %s (%ss): %s/%s",
-                    state["operationType"],
-                    window["timeout"],
-                    value,
-                    limit,
+                percentage = f"{value / limit:.1%}" if limit > 0 else "n/a"
+                is_high = limit > 0 and value >= 0.8 * limit
+                high_usage = high_usage or is_high
+                operation = str(state["operationType"]).replace("_", " ").capitalize()
+                rows.append(
+                    f"    {operation:<{name_width}} {value:>10,} / {limit:<10,} "
+                    f"{percentage:>6}{'  HIGH' if is_high else ''}"
                 )
-                if limit > 0 and value >= 0.8 * limit:
-                    self.call_delay = max(self.call_delay, 1.0)
-                    LOGGER.warning(
-                        "API usage is at least 80%%; capture delay is now %.1fs",
-                        self.call_delay,
-                    )
+            sections.append("\n".join(rows))
+        if sections:
+            LOGGER.info(
+                "\nAPI usage (shared by this domain)\n\n%s\n", "\n\n".join(sections)
+            )
+        if high_usage:
+            self.call_delay = max(self.call_delay, 1.0)
+            LOGGER.warning(
+                "High API usage (80%% or more). Capture pause: %.1f seconds per request.\n",
+                self.call_delay,
+            )
 
     def getVCCConfiguration(self):
         """Method to get the VCC Configuration for the domain and create the domain snapshot folder"""
@@ -211,9 +255,7 @@ class Five9DomainConfig:
         )
 
         if os.path.exists(self.domain_path):
-            print(
-                f"\nClearing previous snapshot files (keeping .git) for {self.vccConfig.domainName}:\n{self.domain_path}\n"
-            )
+            LOGGER.debug("Refreshing snapshot working files in %s", self.domain_path)
             # Remove old files so objects deleted in the domain show up as
             # deletions in git. The .git folder (history) is never touched.
             for name in os.listdir(self.domain_path):
@@ -229,7 +271,7 @@ class Five9DomainConfig:
 
         try:
             self.repo = Repo(self.domain_path)
-            print(f"Found existing repo at {self.domain_path}")
+            LOGGER.debug("Using snapshot history in %s", self.domain_path)
         except InvalidGitRepositoryError:
             self.repo = Repo.init(self.domain_path)
             # set the "longpaths=true" option for the repo (required for Windows
@@ -237,9 +279,8 @@ class Five9DomainConfig:
             self.repo.git.config("core.longpaths", "true")
             self.repo.git.add(A=True)
             self.repo.index.commit("Initial Commit")
-            print(f"Created new repo at {self.domain_path}")
+            LOGGER.debug("Created snapshot history in %s", self.domain_path)
 
-        print(f"\nDomain snapshot initialized for:\n{self.vccConfig.domainName}\n")
         self._mark_capture_incomplete()
 
     def _mark_capture_incomplete(self):
@@ -297,8 +338,8 @@ class Five9DomainConfig:
 
         with logging_redirect_tqdm(), tqdm(
             method_response or [],
-            desc=subfolder_name,
-            unit="object",
+            desc=DETAIL_LABELS.get(subfolder_name, subfolder_name.replace("_", " ")),
+            unit="item",
             mininterval=1,
             dynamic_ncols=True,
         ) as objects:
@@ -346,14 +387,26 @@ class Five9DomainConfig:
             methods = self.methods
         if self.client is not None:
             try:
+                LOGGER.info(
+                    "\nDomain configuration capture\n"
+                    "  Domain: %s\n"
+                    "  Save folder: %s\n\n"
+                    "Working files will be refreshed; earlier saved snapshots remain in history.\n",
+                    self.vccConfig.domainName,
+                    self.domain_path,
+                )
                 self._check_call_counters()
                 self.getVCCConfiguration()
                 self.domain_objects = {}
 
-                print("Processing Domain Object Methods")
                 for method in self.client.service._operations.keys():
                     if method in methods:
-                        print(f"\t{method}")
+                        label = re.sub(
+                            r"(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])",
+                            " ",
+                            method[3:] if method.startswith("get") else method,
+                        )
+                        LOGGER.info("\nCapturing %s\n", label)
                         target_path_for_method = os.path.join(self.domain_path, method)
                         # create directory for the target path
                         os.makedirs(
@@ -443,7 +496,7 @@ class Five9DomainConfig:
                             ) from error
 
                 os.remove(os.path.join(self.domain_path, INCOMPLETE_MARKER))
-                LOGGER.info("Committing captured domain configuration")
+                LOGGER.info("\nSaving snapshot...\n")
                 self.repo.git.add(A=True)
                 self.repo.index.commit(
                     f"Domain Object Sync {time.strftime('%Y-%m-%d %H:%M:%S')}"
@@ -453,9 +506,11 @@ class Five9DomainConfig:
                 if self.domain_path and os.path.isdir(self.domain_path):
                     self._mark_capture_incomplete()
                 raise DomainCaptureError(
-                    f"Capture incomplete at {self.domain_path}; no snapshot commit "
-                    f"created. Last API method: {self._last_api_method}. "
-                    "Previous committed snapshots remain in Git history."
+                    f"Capture incomplete.\n"
+                    f"  Snapshot folder: {self.domain_path}\n"
+                    f"  Last API method: {self._last_api_method}\n\n"
+                    "No new snapshot was saved. Earlier saved snapshots remain in history.\n"
+                    "The working files may be partial; do not use them as a complete backup."
                 ) from error
         else:
             raise DomainCaptureError("No active client available for capture")
@@ -545,9 +600,7 @@ class Five9DomainConfig:
         )
 
         os.makedirs(subfolder_path, exist_ok=True)
-        print(
-            f"\n\n********** Demystifying campaign profile filters to\n{subfolder_path}"
-        )
+        LOGGER.info("Writing readable campaign profile filters")
         for pf in profile_filters.keys():
             profile_filter = profile_filters[pf]
             if verbose == True:

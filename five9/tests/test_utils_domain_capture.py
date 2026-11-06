@@ -1,4 +1,5 @@
 import io
+import logging
 import os
 import tempfile
 import unittest
@@ -178,10 +179,12 @@ class TestSnapshotRepoPersistence(unittest.TestCase):
         ]
         with self.assertLogs(domain_capture.LOGGER, level="INFO") as logs:
             cfg._check_call_counters()
-        self.assertEqual(
-            logs.output,
-            ["INFO:five9.utils.domain_capture:API usage QUERY (60s): 1/180"],
-        )
+        self.assertEqual(len(logs.records), 1)
+        summary = logs.records[0].getMessage()
+        self.assertIn("API usage (shared by this domain)", summary)
+        self.assertIn("1 minute window", summary)
+        self.assertRegex(summary, r"Query\s+1 / 180\s+0\.6%")
+        self.assertNotIn("Update", summary)
         client.service.getCallCountersState.return_value[0]["callCounterStates"][0][
             "value"
         ] = 0
@@ -189,6 +192,47 @@ class TestSnapshotRepoPersistence(unittest.TestCase):
             cfg._check_call_counters()
         log_info.assert_not_called()
         self.assertEqual(cfg.call_delay, 0.5)
+
+    def test_counter_summary_orders_windows_and_limits_and_warns_once(self):
+        client = _fake_client("Test Domain")
+        cfg = domain_capture.Five9DomainConfig(client=client, methods=[])
+        client.service.getCallCountersState.return_value = [
+            {
+                "timeout": 60,
+                "callCounterStates": [
+                    {"operationType": "UPDATE", "value": 48, "limit": 60},
+                    {"operationType": "QUERY", "value": 144, "limit": 180},
+                ],
+            },
+            {
+                "timeout": 86400,
+                "callCounterStates": [
+                    {"operationType": "QUERY", "value": 1200, "limit": 10000},
+                ],
+            },
+            {
+                "timeout": 3600,
+                "callCounterStates": [
+                    {"operationType": "QUERY", "value": 12, "limit": 1000},
+                    {"operationType": "UNKNOWN", "value": 1, "limit": 0},
+                ],
+            },
+        ]
+        with self.assertLogs(domain_capture.LOGGER, level="INFO") as logs:
+            cfg._check_call_counters()
+        self.assertEqual(len(logs.records), 2)
+        summary = logs.records[0].getMessage()
+        self.assertLess(summary.index("1 day window"), summary.index("1 hour window"))
+        self.assertLess(
+            summary.index("1 hour window"), summary.index("1 minute window")
+        )
+        minute_section = summary.split("1 minute window")[1]
+        self.assertLess(minute_section.index("Query"), minute_section.index("Update"))
+        self.assertIn("1,200 / 10,000", summary)
+        self.assertIn("n/a", summary)
+        self.assertEqual(summary.count("HIGH"), 2)
+        self.assertEqual(logs.records[1].levelname, "WARNING")
+        self.assertEqual(cfg.call_delay, 1.0)
 
     def test_invalid_retry_and_monitor_settings_rejected(self):
         for kwargs in (
@@ -337,7 +381,7 @@ class TestSnapshotRepoPersistence(unittest.TestCase):
             cfg.get_config_object_detail(
                 "getCampaigns", "campaigns_outbound", items, "getOutboundCampaign"
             )
-        self.assertIn("campaigns_outbound", progress_output.getvalue())
+        self.assertIn("Outbound campaigns", progress_output.getvalue())
         self.assertIn("2/2", progress_output.getvalue())
         self.assertEqual(output.getvalue(), "")
         for item in items:
@@ -349,6 +393,35 @@ class TestSnapshotRepoPersistence(unittest.TestCase):
                     )
                 )
             )
+
+    def test_console_formatter_keeps_warnings_distinct_and_info_plain(self):
+        formatter = domain_config_capture._CaptureConsoleFormatter()
+        for level, expected in (
+            (logging.INFO, "\nCapture phase\n"),
+            (logging.WARNING, "WARNING: \nCapture phase\n"),
+            (logging.ERROR, "ERROR: \nCapture phase\n"),
+        ):
+            with self.subTest(level=level):
+                record = logging.LogRecord(
+                    "capture", level, "", 0, "\nCapture %s\n", ("phase",), None
+                )
+                self.assertEqual(formatter.format(record), expected)
+
+    def test_capture_phase_headings_are_readable_and_separated(self):
+        client = _fake_client("Test Domain")
+        client.service._operations = {"getAgentGroups": None, "getIVRScripts": None}
+        client.service.getAgentGroups.return_value = []
+        client.service.getIVRScripts.return_value = []
+        cfg = domain_capture.Five9DomainConfig(
+            client=client, methods=["getAgentGroups", "getIVRScripts"]
+        )
+        with self.assertLogs(domain_capture.LOGGER, level="INFO") as logs:
+            cfg.get_domain_objects()
+        messages = [record.getMessage() for record in logs.records]
+        self.assertIn("\nCapturing Agent Groups\n", messages)
+        self.assertIn("\nCapturing IVR Scripts\n", messages)
+        self.assertIn("\nSaving snapshot...\n", messages)
+        self.assertEqual(sum("Save folder:" in message for message in messages), 1)
 
     def test_detail_progress_closes_on_failure_and_preserves_warning(self):
         cfg = domain_capture.Five9DomainConfig(
