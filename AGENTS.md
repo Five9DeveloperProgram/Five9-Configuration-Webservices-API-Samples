@@ -267,9 +267,13 @@ coverage html && open htmlcov/index.html
   diagrams/docs during capture by default (`--skip-ivr-documentation` to
   opt out)
 - Capture reads use `client.throttled_service` with a configurable total pause
-  (`--call-delay`, default 0.5 seconds), bounded query-limit retries, and periodic
-  call-counter checks. High usage raises the pause to at least 1 second. See
-  `examples/domain_config/README.md` for retry and monitoring options.
+  by default (`--call-delay`, 0.5 seconds). Explicit `--dynamic-pacing` instead
+  uses a capture-owned `ThrottledServiceProxy` with scheduler-controlled spacing,
+  targeting 95% of the tightest reported QUERY rate without a 0.3-second floor.
+  `--query-limit-per-minute` can lower that rate for a personal budget. Both modes
+  retain bounded retries and usage checks; dynamic mode recovers after backoff.
+  Counters are user-scoped, while enforcement is domain-wide. See
+  `examples/domain_config/README.md` for pacing, retry, and monitoring options.
 - Failed captures raise `DomainCaptureError` (CLI exit status 1), leave
   `CAPTURE_INCOMPLETE.txt`, and do not commit a snapshot. Working files may be
   partial; previous committed snapshots remain in Git history. Do not treat
@@ -468,6 +472,12 @@ mistakes can affect live agents, campaigns, and customer data.
    around it, or shorten its delay to work around rate limits. If the user
    explicitly requests bypassing or shortening it, explain the risk of
    throttling or account lockout and get their informed confirmation first.
+  Domain capture has an explicit `--dynamic-pacing` opt-in for this purpose:
+  it uses a capture-owned built-in proxy with scheduler-controlled spacing,
+  leaving the client's proxy unchanged. Do not enable this mode automatically
+  for a live run; obtain the informed confirmation described above. Fixed
+  pacing remains the default. See the domain capture README for personal
+  budgets and the limits of user-scoped counters.
 
 4. **Escalate production deployment requests.** If a user's request implies
    deploying this sample code (or a derivative of it) as part of a production

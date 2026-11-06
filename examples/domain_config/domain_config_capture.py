@@ -63,7 +63,17 @@ def main():
         "--call-delay",
         type=float,
         default=0.5,
-        help="Total capture pause per attempt in seconds (default: 0.5, minimum: 0.3)",
+        help="Fixed pause, or initial dynamic spacing, in seconds (default: 0.5, minimum: 0.3)",
+    )
+    parser.add_argument(
+        "--dynamic-pacing",
+        action="store_true",
+        help="Opt in to near-full use of reported query limits; may use pauses below 0.3s",
+    )
+    parser.add_argument(
+        "--query-limit-per-minute",
+        type=int,
+        help="Personal read budget for this capture (positive integer); cannot raise the dynamic domain target",
     )
     parser.add_argument(
         "--rate-limit-retries",
@@ -98,6 +108,8 @@ def main():
             call_delay=args.call_delay,
             rate_limit_retries=args.rate_limit_retries,
             counter_check_interval=args.counter_check_interval,
+            dynamic_pacing=args.dynamic_pacing,
+            query_limit_per_minute=args.query_limit_per_minute,
         )
         domain.get_domain_objects()
     except (domain_capture.DomainCaptureError, ValueError) as error:

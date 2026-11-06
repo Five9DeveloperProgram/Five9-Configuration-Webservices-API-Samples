@@ -20,6 +20,7 @@ from .campaign_profile_comprehension import demystify_filter
 from . import ivr_diagram
 
 API_SLEEP_INTERVAL = 0.3
+DYNAMIC_TARGET_UTILIZATION = 0.95
 LOGGER = logging.getLogger(__name__)
 QUERY_LIMIT_FAULT = re.compile(
     r"(\d+)\s+seconds?\s+limit\s+\(\d+\)\s+for\s+query\s+operation\s+is\s+reached",
@@ -72,9 +73,10 @@ class DomainCaptureError(RuntimeError):
 class Five9DomainConfig:
     """Capture domain objects with paced reads and bounded query-limit retries.
 
-    ``call_delay`` includes the built-in proxy's 0.3-second pause. Usage checks
-    and rate-limit faults raise it to at least one second for this instance.
-    A supplied client must expose ``throttled_service`` like ``Five9Client``.
+    Fixed pacing includes the client's proxy pause in ``call_delay``. Opt-in
+    dynamic pacing uses a capture-owned proxy and derives request spacing from
+    the reported query limits, including response and local processing time.
+    ``query_limit_per_minute`` caps this capture's reads in either mode.
     """
 
     def __init__(
@@ -90,6 +92,8 @@ class Five9DomainConfig:
         call_delay=0.5,
         rate_limit_retries=3,
         counter_check_interval=30,
+        dynamic_pacing=False,
+        query_limit_per_minute=None,
     ):
         if not math.isfinite(call_delay) or call_delay < API_SLEEP_INTERVAL:
             raise ValueError("call_delay must be finite and at least 0.3 seconds")
@@ -97,7 +101,23 @@ class Five9DomainConfig:
             raise ValueError("rate_limit_retries must be an integer between 0 and 10")
         if not isinstance(counter_check_interval, int) or counter_check_interval < 1:
             raise ValueError("counter_check_interval must be a positive integer")
+        if query_limit_per_minute is not None and (
+            isinstance(query_limit_per_minute, bool)
+            or not isinstance(query_limit_per_minute, int)
+            or query_limit_per_minute < 1
+        ):
+            raise ValueError("query_limit_per_minute must be a positive integer")
         self.call_delay = call_delay
+        self.dynamic_pacing = dynamic_pacing
+        self._initial_call_delay = call_delay
+        self._personal_interval = (
+            60.0 / query_limit_per_minute if query_limit_per_minute else 0.0
+        )
+        self._query_interval = None
+        self._last_request_started = None
+        self._backoff_interval = 0.0
+        self._recover_after = 0.0
+        self._last_reported_interval = call_delay
         self.rate_limit_retries = rate_limit_retries
         self.counter_check_interval = counter_check_interval
         self._calls_since_counter_check = 0
@@ -119,12 +139,35 @@ class Five9DomainConfig:
         if client is None:
             LOGGER.info("\nConnecting to Five9...\n")
             self.client = five9_session.Five9Client(
-                five9username=username, five9password=password, account=account, api_hostname_alias=api_hostname_alias
+                five9username=username,
+                five9password=password,
+                account=account,
+                api_hostname_alias=api_hostname_alias,
             )
         else:
             self.client = client
 
         if self.client is not None:
+            LOGGER.info(
+                "Capture pacing: %s.\n",
+                (
+                    "dynamic, targeting 95% of reported query limits"
+                    if self.dynamic_pacing
+                    else f"fixed, {call_delay:g}-second pause"
+                ),
+            )
+            if query_limit_per_minute is not None:
+                LOGGER.info(
+                    "Personal budget: at most %d reads/minute.\n",
+                    query_limit_per_minute,
+                )
+            self._capture_service = (
+                five9_session.ThrottledServiceProxy(
+                    self.client.service, delay_seconds=0
+                )
+                if self.dynamic_pacing
+                else self.client.throttled_service
+            )
             # check for methods that have dependencies, add dependencies to methods list
             for method in methods:
                 if method in METHOD_DEPENDENCIES:
@@ -157,17 +200,21 @@ class Five9DomainConfig:
     def _request(self, method, *args, **kwargs):
         self._last_api_method = method
         for attempt in range(self.rate_limit_retries + 1):
-            time.sleep(self.call_delay - API_SLEEP_INTERVAL)
+            self._wait_before_request()
             self._calls_since_counter_check += 1
             try:
-                return getattr(self.client.throttled_service, method)(*args, **kwargs)
+                return getattr(self._capture_service, method)(*args, **kwargs)
             except zeep.exceptions.Fault as error:
                 match = QUERY_LIMIT_FAULT.search(str(error))
                 if match is None or attempt == self.rate_limit_retries:
                     raise
-                wait_seconds = max(60, int(match.group(1))) * 2 ** attempt
+                wait_seconds = max(60, int(match.group(1))) * 2**attempt
                 wait_seconds += random.uniform(0, 5)
-                self.call_delay = max(self.call_delay, 1.0)
+                self.call_delay = max(
+                    self.call_delay * (2 if self.dynamic_pacing else 1), 1.0
+                )
+                self._backoff_interval = self.call_delay
+                self._recover_after = time.monotonic() + wait_seconds + 60
                 LOGGER.warning(
                     "Five9's read limit was reached (%s).\n"
                     "Waiting %.1f seconds, then trying again (%d of %d).\n",
@@ -178,11 +225,64 @@ class Five9DomainConfig:
                 )
                 time.sleep(wait_seconds)
 
+    def _wait_before_request(self):
+        proxy_pause = 0.0 if self.dynamic_pacing else API_SLEEP_INTERVAL
+        extra_pause = 0.0 if self.dynamic_pacing else self.call_delay - proxy_pause
+        interval = max(
+            self._personal_interval, self.call_delay if self.dynamic_pacing else 0
+        )
+        if self._last_request_started is None:
+            extra_pause = max(extra_pause, interval - proxy_pause)
+        else:
+            elapsed = time.monotonic() - self._last_request_started
+            extra_pause = max(extra_pause, interval - elapsed)
+        time.sleep(max(0.0, extra_pause))
+        self._last_request_started = time.monotonic()
+
+    def _update_dynamic_pacing(self, counters):
+        if not self.dynamic_pacing:
+            return
+        intervals = []
+        high_query_usage = False
+        for window in counters or []:
+            for state in window.get("callCounterStates") or []:
+                if str(state["operationType"]).upper() != "QUERY":
+                    continue
+                if window["timeout"] <= 0 or state["limit"] <= 0:
+                    continue
+                intervals.append(
+                    window["timeout"] / (DYNAMIC_TARGET_UTILIZATION * state["limit"])
+                )
+                high_query_usage |= state["value"] >= 0.98 * state["limit"]
+        if not intervals:
+            self.call_delay = max(
+                self.call_delay, self._initial_call_delay, self._personal_interval
+            )
+            return
+        self._query_interval = max(self._personal_interval, *intervals)
+        if high_query_usage:
+            self._backoff_interval = max(
+                self._backoff_interval, self._query_interval * 2
+            )
+        elif time.monotonic() >= self._recover_after:
+            self._backoff_interval *= 0.8
+        self.call_delay = max(self._query_interval, self._backoff_interval)
+        if abs(self.call_delay - self._last_reported_interval) >= max(
+            0.01, self._last_reported_interval * 0.1
+        ):
+            LOGGER.info(
+                "Capture pacing: up to %.1f reads/minute (%.3f-second target spacing).\n",
+                60 / self.call_delay,
+                self.call_delay,
+            )
+            self._last_reported_interval = self.call_delay
+
     def _check_call_counters(self):
         counters = zeep.helpers.serialize_object(
             self._request("getCallCountersState"), dict
         )
         self._calls_since_counter_check = 0
+        self._update_dynamic_pacing(counters)
         sections = []
         high_usage = False
         for window in sorted(
@@ -221,8 +321,11 @@ class Five9DomainConfig:
                 limit = state["limit"]
                 value = state["value"]
                 percentage = f"{value / limit:.1%}" if limit > 0 else "n/a"
-                is_high = limit > 0 and value >= 0.8 * limit
-                high_usage = high_usage or is_high
+                threshold = 0.98 if self.dynamic_pacing else 0.8
+                is_high = limit > 0 and value >= threshold * limit
+                high_usage = high_usage or (
+                    is_high and str(state["operationType"]).upper() == "QUERY"
+                )
                 operation = str(state["operationType"]).replace("_", " ").capitalize()
                 rows.append(
                     f"    {operation:<{name_width}} {value:>10,} / {limit:<10,} "
@@ -231,12 +334,16 @@ class Five9DomainConfig:
             sections.append("\n".join(rows))
         if sections:
             LOGGER.info(
-                "\nAPI usage (shared by this domain)\n\n%s\n", "\n\n".join(sections)
+                "\nYour API usage / Domain limit\n"
+                "Other users' activity is not included in these counts.\n\n%s\n",
+                "\n\n".join(sections),
             )
         if high_usage:
-            self.call_delay = max(self.call_delay, 1.0)
+            if not self.dynamic_pacing:
+                self.call_delay = max(self.call_delay, 1.0)
             LOGGER.warning(
-                "High API usage (80%% or more). Capture pause: %.1f seconds per request.\n",
+                "High query usage. Capture %s: %.3f seconds per request.\n",
+                "target spacing" if self.dynamic_pacing else "pause",
                 self.call_delay,
             )
 

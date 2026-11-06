@@ -40,6 +40,19 @@ class TestSnapshotRepoPersistence(unittest.TestCase):
         os.chdir(self._cwd)
         self._tmp.cleanup()
 
+    def _use_fake_clock(self, cfg):
+        clock = SimpleNamespace(now=0.0)
+        self.sleep.side_effect = lambda seconds: setattr(
+            clock, "now", clock.now + seconds
+        )
+        patcher = mock.patch.object(
+            domain_capture.time, "monotonic", side_effect=lambda: clock.now
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        cfg._last_request_started = None
+        return clock
+
     def _capture(self, domain="Test Domain", files=None):
         cfg = domain_capture.Five9DomainConfig(client=_fake_client(domain), methods=[])
         for name, text in (files or {}).items():
@@ -181,7 +194,7 @@ class TestSnapshotRepoPersistence(unittest.TestCase):
             cfg._check_call_counters()
         self.assertEqual(len(logs.records), 1)
         summary = logs.records[0].getMessage()
-        self.assertIn("API usage (shared by this domain)", summary)
+        self.assertIn("Your API usage / Domain limit", summary)
         self.assertIn("1 minute window", summary)
         self.assertRegex(summary, r"Query\s+1 / 180\s+0\.6%")
         self.assertNotIn("Update", summary)
@@ -234,11 +247,79 @@ class TestSnapshotRepoPersistence(unittest.TestCase):
         self.assertEqual(logs.records[1].levelname, "WARNING")
         self.assertEqual(cfg.call_delay, 1.0)
 
+    def test_dynamic_pacing_uses_domain_limits_without_changing_client_proxy(self):
+        client = _fake_client("Test Domain")
+        original_proxy = client.throttled_service
+        cfg = domain_capture.Five9DomainConfig(
+            client=client, methods=[], dynamic_pacing=True
+        )
+        counters = [
+            {
+                "timeout": 60,
+                "callCounterStates": [
+                    {"operationType": "query", "value": 0, "limit": 600},
+                    {"operationType": "UPDATE", "value": 60, "limit": 60},
+                ],
+            }
+        ]
+        cfg._update_dynamic_pacing(counters)
+        self.assertAlmostEqual(cfg.call_delay, 60 / (0.95 * 600))
+        self.assertIs(client.throttled_service, original_proxy)
+        self.assertEqual(original_proxy._delay, 0.3)
+        counters.append(
+            {
+                "timeout": 3600,
+                "callCounterStates": [
+                    {"operationType": "QUERY", "value": 0, "limit": 3600}
+                ],
+            }
+        )
+        cfg._update_dynamic_pacing(counters)
+        self.assertAlmostEqual(cfg.call_delay, 3600 / (0.95 * 3600))
+
+    def test_personal_budget_and_latency_are_included_in_request_spacing(self):
+        cfg = domain_capture.Five9DomainConfig(
+            client=_fake_client("Test Domain"),
+            methods=[],
+            dynamic_pacing=True,
+            query_limit_per_minute=60,
+        )
+        cfg._update_dynamic_pacing(
+            [
+                {
+                    "timeout": 60,
+                    "callCounterStates": [
+                        {"operationType": "QUERY", "value": 0, "limit": 600}
+                    ],
+                }
+            ]
+        )
+        clock = SimpleNamespace(now=0.0)
+        self.sleep.side_effect = lambda seconds: setattr(
+            clock, "now", clock.now + seconds
+        )
+        cfg._last_request_started = None
+        with mock.patch.object(
+            domain_capture.time, "monotonic", side_effect=lambda: clock.now
+        ):
+            cfg.client.service.getSkills.side_effect = lambda: clock.now
+            first = cfg._request("getSkills")
+            clock.now += 0.4
+            second = cfg._request("getSkills")
+            self.assertAlmostEqual(second - first, 1.0)
+            clock.now += 2.0
+            third = cfg._request("getSkills")
+            self.assertAlmostEqual(third - second, 2.0)
+
     def test_invalid_retry_and_monitor_settings_rejected(self):
         for kwargs in (
             {"rate_limit_retries": -1},
             {"rate_limit_retries": 11},
             {"counter_check_interval": 0},
+            {"query_limit_per_minute": 0},
+            {"query_limit_per_minute": -1},
+            {"query_limit_per_minute": 1.5},
+            {"query_limit_per_minute": True},
         ):
             with self.subTest(kwargs=kwargs), mock.patch.object(
                 domain_capture.five9_session, "Five9Client"
@@ -246,6 +327,139 @@ class TestSnapshotRepoPersistence(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     domain_capture.Five9DomainConfig(**kwargs)
                 create_client.assert_not_called()
+
+    def test_dynamic_reads_and_counter_checks_share_the_same_budget(self):
+        client = _fake_client("Test Domain")
+        cfg = domain_capture.Five9DomainConfig(
+            client=client,
+            methods=[],
+            dynamic_pacing=True,
+            query_limit_per_minute=1000,
+            counter_check_interval=2,
+        )
+        counters = [
+            {
+                "timeout": 60,
+                "callCounterStates": [
+                    {"operationType": "QUERY", "value": 0, "limit": 600}
+                ],
+            }
+        ]
+        cfg._update_dynamic_pacing(counters)
+        cfg._calls_since_counter_check = 0
+        clock = self._use_fake_clock(cfg)
+        starts = []
+        client.service.getSkills.side_effect = lambda: starts.append(clock.now)
+        client.service.getCallCountersState.side_effect = lambda: (
+            starts.append(clock.now) or counters
+        )
+        for unused in range(3):
+            cfg._call_service("getSkills")
+        self.assertEqual(len(starts), 4)
+        for previous, current in zip(starts, starts[1:]):
+            self.assertAlmostEqual(current - previous, 60 / (0.95 * 600))
+        self.assertLess(cfg.call_delay, 0.3)
+
+    def test_dynamic_retry_backs_off_then_recovers_without_exceeding_budget(self):
+        client = _fake_client("Test Domain")
+        cfg = domain_capture.Five9DomainConfig(
+            client=client, methods=[], dynamic_pacing=True, query_limit_per_minute=120
+        )
+        counters = [
+            {
+                "timeout": 60,
+                "callCounterStates": [
+                    {"operationType": "QUERY", "value": 0, "limit": 600}
+                ],
+            }
+        ]
+        cfg._update_dynamic_pacing(counters)
+        clock = self._use_fake_clock(cfg)
+        starts = []
+
+        def attempt():
+            starts.append(clock.now)
+            if len(starts) == 1:
+                raise Fault("60 seconds limit (600) for query operation is reached.")
+            return []
+
+        client.service.getSkills.side_effect = attempt
+        with mock.patch.object(domain_capture.random, "uniform", return_value=0):
+            cfg._request("getSkills")
+        self.assertEqual(starts[1] - starts[0], 60)
+        cfg._update_dynamic_pacing(counters)
+        self.assertEqual(cfg.call_delay, 1.0)
+        clock.now = cfg._recover_after
+        cfg._update_dynamic_pacing(counters)
+        self.assertEqual(cfg.call_delay, 0.8)
+        for unused in range(10):
+            cfg._update_dynamic_pacing(counters)
+        self.assertEqual(cfg.call_delay, 0.5)
+
+    def test_missing_query_limits_do_not_accelerate_capture(self):
+        cfg = domain_capture.Five9DomainConfig(
+            client=_fake_client("Test Domain"), methods=[], dynamic_pacing=True
+        )
+        cfg._update_dynamic_pacing([])
+        self.assertEqual(cfg.call_delay, 0.5)
+        cfg._update_dynamic_pacing(
+            [
+                {
+                    "timeout": 3600,
+                    "callCounterStates": [
+                        {"operationType": "QUERY", "value": 0, "limit": 1000}
+                    ],
+                }
+            ]
+        )
+        slower_delay = cfg.call_delay
+        cfg._update_dynamic_pacing(
+            [
+                {
+                    "timeout": 60,
+                    "callCounterStates": [
+                        {"operationType": "QUERY", "value": 0, "limit": 0}
+                    ],
+                }
+            ]
+        )
+        self.assertEqual(cfg.call_delay, slower_delay)
+
+    def test_query_pressure_not_write_pressure_slows_dynamic_capture(self):
+        client = _fake_client("Test Domain")
+        cfg = domain_capture.Five9DomainConfig(
+            client=client, methods=[], dynamic_pacing=True
+        )
+        counters = [
+            {
+                "timeout": 60,
+                "callCounterStates": [
+                    {"operationType": "QUERY", "value": 570, "limit": 600},
+                    {"operationType": "UPDATE", "value": 60, "limit": 60},
+                ],
+            }
+        ]
+        client.service.getCallCountersState.return_value = counters
+        with mock.patch.object(domain_capture.LOGGER, "warning") as warning:
+            cfg._check_call_counters()
+        warning.assert_not_called()
+        self.assertAlmostEqual(cfg.call_delay, 60 / (0.95 * 600))
+        counters[0]["callCounterStates"][0]["value"] = 588
+        with self.assertLogs(domain_capture.LOGGER, level="WARNING"):
+            cfg._check_call_counters()
+        self.assertAlmostEqual(cfg.call_delay, 2 * 60 / (0.95 * 600))
+
+    def test_fixed_mode_keeps_proxy_pause_and_honors_personal_budget(self):
+        cfg = domain_capture.Five9DomainConfig(
+            client=_fake_client("Test Domain"), methods=[], query_limit_per_minute=30
+        )
+        self.assertFalse(cfg.dynamic_pacing)
+        clock = self._use_fake_clock(cfg)
+        cfg.client.service.getSkills.side_effect = lambda: clock.now
+        first = cfg._request("getSkills")
+        second = cfg._request("getSkills")
+        self.assertAlmostEqual(second - first, 2.0)
+        self.assertEqual(cfg.client.throttled_service._delay, 0.3)
 
     def test_failed_capture_leaves_marker_and_does_not_commit_or_continue(self):
         previous = self._capture(files={"previous.json": "{}"})
@@ -309,6 +523,9 @@ class TestSnapshotRepoPersistence(unittest.TestCase):
             "2",
             "--counter-check-interval",
             "10",
+            "--dynamic-pacing",
+            "--query-limit-per-minute",
+            "120",
         ]
         with mock.patch("sys.argv", arguments), mock.patch.object(
             domain_capture, "Five9DomainConfig"
@@ -322,6 +539,10 @@ class TestSnapshotRepoPersistence(unittest.TestCase):
             self.assertEqual(create_capture.call_args.kwargs["rate_limit_retries"], 2)
             self.assertEqual(
                 create_capture.call_args.kwargs["counter_check_interval"], 10
+            )
+            self.assertTrue(create_capture.call_args.kwargs["dynamic_pacing"])
+            self.assertEqual(
+                create_capture.call_args.kwargs["query_limit_per_minute"], 120
             )
 
     def test_campaign_and_profile_reads_use_proxy(self):
@@ -364,6 +585,8 @@ class TestSnapshotRepoPersistence(unittest.TestCase):
         ) as create_capture:
             self.assertEqual(domain_config_capture.main(), 0)
         create_capture.return_value.get_domain_objects.assert_called_once_with()
+        self.assertFalse(create_capture.call_args.kwargs["dynamic_pacing"])
+        self.assertIsNone(create_capture.call_args.kwargs["query_limit_per_minute"])
 
     def test_detail_progress_counts_objects_without_printing_names(self):
         cfg = domain_capture.Five9DomainConfig(
